@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 07 · Pretraining at Scale — The Field Guide to LLMs</title>
+  <meta name="description" content="The next-token prediction objective, web-scale data pipelines, GPU-months of compute, scaling laws, and why the Chinchilla correction changed how every model is trained.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 07 · Part III — Training</div>
+          <h1>Pretraining at Scale</h1>
+          <p class="standfirst">The knowledge inside an LLM was not programmed — it was <em>compressed</em> from trillions of tokens of human text by one absurdly simple objective: predict the next word. This plate explains how that works, what it costs, and why a 2022 paper from DeepMind rewrote the playbook for how to spend a compute budget.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 20 min</span>
+            <span><b>Prereqs</b> · Plate 06</span>
+            <span><b>Code</b> · PyTorch · transformers</span>
+          </div>
+        </div>
+
+        <h2 id="objective">The deceptively simple objective</h2>
+        <p>
+          <span class="gloss" data-term="pretraining">Pretraining</span> an LLM uses a single objective:
+          given a sequence of tokens, predict the next one. That's it. No labels, no human annotation,
+          no task definition. The text itself provides the supervision — the "correct answer" at every
+          position is simply the token that actually comes next in the document.
+        </p>
+        <p>
+          This is called <strong>self-supervised learning</strong>. The training corpus is billions of
+          documents; each document is sliced into fixed-length windows (the
+          <span class="gloss" data-term="context-window">context window</span> size, e.g. 4,096 tokens);
+          and for every window, the model is asked to produce a probability distribution over the vocabulary
+          at each position. The label at position <em>i</em> is token <em>i + 1</em>.
+        </p>
+        <p>
+          It sounds almost too simple to work. Why would predicting the next word teach a model to write
+          code, answer medical questions, or reason through logic puzzles? The answer, first articulated
+          for language models by OpenAI's GPT-2 paper<a class="cite" data-ref="radford2019"></a>, is that
+          next-token prediction is a <em>proxy for understanding</em>. To consistently predict the next
+          word in a Wikipedia article about quantum mechanics, you have to have encoded something about
+          quantum mechanics. To predict the next line of Python, you need to have encoded something about
+          Python semantics. The objective forces the model to compress the statistical regularities of
+          an enormous corpus — and those regularities are, to a first approximation, <em>knowledge</em>.
+        </p>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · web-scale fill-in-the-blank</div>
+          <p>Imagine an intern who learns to code by reading every Stack Overflow post and GitHub repository
+          ever written, with no teacher — just trying to predict the next character at every step.
+          If they're good enough at that game, they'll have internalized the idioms, the API names, the
+          common bugs. <strong>Compression ≈ understanding</strong> (within the limits of the training
+          distribution). Pretraining is that game, played on the entire web, in every language, across
+          every domain, simultaneously.</p>
+        </div>
+
+        <h2 id="data">Where the data comes from (and why cleaning matters)</h2>
+        <p>
+          The scale of pretraining data is hard to intuit. GPT-3 was trained on ~300 B tokens<a class="cite" data-ref="brown2020"></a>;
+          modern models train on 1–15 <em>trillion</em> tokens. The primary sources:
+        </p>
+        <ul>
+          <li><strong>Common Crawl.</strong> A non-profit crawl of a large fraction of the web, released
+            monthly. Enormous (petabytes) and messy — raw HTML, spam, duplicates, and adult content
+            intermixed with genuinely useful text.</li>
+          <li><strong>The Pile</strong> (EleutherAI). A curated 825 GB dataset combining Common Crawl
+            subsets, books, arXiv, GitHub, Wikipedia, StackExchange, and more, with intentional diversity.</li>
+          <li><strong>FineWeb</strong> (Hugging Face). A newer 15 T-token filtered Common Crawl derivative
+            that prioritises quality over size — a strong open alternative to proprietary training sets.</li>
+          <li><strong>Books, Wikipedia, code, academic papers.</strong> High signal-to-noise sources given
+            outsized weight relative to raw web text.</li>
+        </ul>
+        <p>
+          Raw Common Crawl is nearly unusable without cleaning. A standard pipeline includes:
+          deduplication (MinHash LSH over n-grams to find near-duplicates at the document and paragraph
+          level), language detection, heuristic quality filters (remove documents where most content is
+          punctuation, URLs, or boilerplate), and toxicity/spam filtering. Deduplication is critical:
+          memorised near-duplicates degrade generalisation, inflate apparent performance, and raise
+          copyright risks.
+        </p>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · data quality and contamination</div>
+          <p>The #1 hidden variable in pretraining is data quality, not model size. Models trained on
+          heavily filtered corpora often outperform larger models on noisier data. A related pitfall:
+          <strong>benchmark contamination</strong> — if MMLU, HumanEval, or GSM8K questions appeared in
+          your training data, your reported scores are inflated. Serious labs deduplicate against known
+          benchmarks; many don't. Reading model papers critically means asking: "what did they actually
+          train on, and did they check for contamination?"</p>
+        </div>
+
+        <h2 id="compute">The cost: compute, GPUs, dollars</h2>
+        <p>
+          Pretraining is expensive in a way that's qualitatively different from anything else in software
+          engineering. A commodity web service at scale costs thousands per month; pretraining a frontier
+          model costs tens of <em>millions</em> of dollars for a single run.
+        </p>
+        <p>
+          The standard unit is the <strong>FLOP</strong> (floating-point operation). Counting the FLOPs
+          for one forward-backward pass through an <em>N</em>-parameter model on a <em>D</em>-token
+          dataset is approximately <code>6ND</code> — the factor of 6 accounts for the forward pass (2N),
+          the backward pass (4N for gradients of weights and activations). Training GPT-3 (175 B params,
+          300 B tokens) required roughly 3 × 10²³ FLOPs. At H100 peak throughput (~1,000 TFLOP/s, with
+          ~40% utilisation in practice), that's around 9,000 GPU-days, or about 25 GPU-years.
+        </p>
+        <p>
+          Practical pretraining runs use hundreds to thousands of GPUs in parallel for weeks to months.
+          A70B model from scratch is a $1–10 M exercise at current cloud prices — before the engineering
+          time, experimentation, and ablations. This is why <span class="gloss" data-term="checkpoint">checkpoints</span>
+          are sacred: losing a run to a hardware fault or a misconfigured hyperparameter without a recent
+          checkpoint is measured in dollars and weeks.
+        </p>
+
+        <h2 id="loss-perplexity">Loss, perplexity, and what "learning" looks like</h2>
+        <p>
+          The training objective is <strong>cross-entropy <span class="gloss" data-term="loss">loss</span></strong>
+          — the negative log-likelihood of the correct next token under the model's distribution.
+          Lower loss means the model is assigning higher probability to the correct tokens.
+        </p>
+        <p style="font-family:var(--font-mono);text-align:center;font-size:1.05rem;color:var(--accent-deep)">
+          L = −(1/D) Σ<sub>t</sub> log P(token<sub>t</sub> | token<sub>1..t-1</sub>)
+        </p>
+        <p>
+          The twin metric reported in papers is <span class="gloss" data-term="perplexity">perplexity</span>:
+          <code>ppl = exp(L)</code>. Perplexity has a pleasing interpretation: a perplexity of 10 means
+          the model is, on average, as uncertain as if it had to choose uniformly among 10 equally likely
+          tokens. A random baseline on a 32,000-token vocabulary would have perplexity ~32,000. A
+          well-trained LLM achieves perplexity in the low single digits on held-out web text — meaning
+          it's usually assigning high confidence to the right answer.
+        </p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · cross-entropy next-token loss</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="single"><pre><code class="language-python">import torch
+import torch.nn.functional as F
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import math
+
+# Illustrative: measure loss on a short text snippet
+model_id = "HuggingFaceTB/SmolLM2-135M"
+tok   = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float32)
+model.eval()
+
+text = "The capital of France is Paris and it is known for the Eiffel Tower."
+ids  = tok(text, return_tensors="pt").input_ids   # shape: (1, seq_len)
+
+with torch.no_grad():
+    outputs = model(ids)                           # logits: (1, seq_len, vocab_size)
+    logits  = outputs.logits
+
+# Next-token prediction: input[i] predicts target[i+1]
+# Shift: logits[0, :-1] vs labels ids[0, 1:]
+shift_logits = logits[0, :-1, :]                  # (seq_len-1, vocab_size)
+shift_labels = ids[0, 1:]                         # (seq_len-1,)
+
+loss = F.cross_entropy(shift_logits, shift_labels)
+ppl  = math.exp(loss.item())
+
+print(f"Cross-entropy loss : {loss.item():.4f}")
+print(f"Perplexity         : {ppl:.2f}")
+# A well-trained model on predictable text gets ppl close to 1–10.
+# A random 32k-vocab baseline would give ppl ≈ 32,000.
+</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>Cross-entropy loss : 1.8321
+Perplexity         : 6.25
+# The 135M model is fairly uncertain on this sentence — a larger model would be ~2–4</code></pre>
+          </div>
+        </div>
+
+        <p>
+          During training, loss decreases smoothly — at first steeply (the model quickly learns common
+          patterns), then gradually. A spike in training loss usually signals a corrupted data batch or
+          a numerical instability (gradient explosion), not a meaningful fluctuation. Smart training
+          pipelines log loss with exponential moving averages and checkpoint before and after any anomaly.
+        </p>
+
+        <h2 id="scaling-laws">Scaling laws and the Chinchilla correction</h2>
+        <p>
+          In 2020, Kaplan et al. at OpenAI published a landmark study<a class="cite" data-ref="kaplan2020"></a>
+          showing that language model loss follows a <span class="gloss" data-term="scaling-laws">power law</span>
+          in model size, data size, and compute budget — independently. Loss decreases predictably as you
+          add parameters, add data, or add compute, with each axis following its own smooth curve. This
+          was transformative: it meant you could <em>predict</em> how good a model would be before
+          training it, given only your compute budget.
+        </p>
+        <p>
+          The practical upshot of the Kaplan scaling laws was: <strong>for a fixed compute budget,
+          make the model as large as possible.</strong> The community followed this advice. GPT-3 at 175 B
+          was trained on "only" 300 B tokens — far fewer than what would maximally utilise a model
+          of that size according to the power law.
+        </p>
+
+        <div class="callout callout--fail">
+          <div class="callout__tag">What didn't — pre-Chinchilla over-sizing</div>
+          <p>Between 2020 and 2022, the race to largest parameters produced a parade of
+          <strong>compute-inefficient models</strong>. GPT-3, Gopher, Megatron-Turing — all trained
+          models with many more parameters than their data budgets could fully utilise. They were good,
+          but they were leaving performance on the table: a smaller model trained on more data for the
+          same FLOPs would have done better. The field was optimising the wrong axis.</p>
+        </div>
+
+        <p>
+          In 2022, Hoffmann et al. at DeepMind ran a massive set of ablations — training over 400
+          models at varying parameter counts and token counts across a range of compute budgets — and
+          derived a revised scaling law<a class="cite" data-ref="hoffmann2022"></a>. Their conclusion
+          is now called the <strong>Chinchilla result</strong> (after the model in the paper): to
+          minimise loss for a given compute budget <em>C</em>, you should scale parameters <em>N</em>
+          and data tokens <em>D</em> <strong>equally</strong>. Specifically, the optimal ratio is
+          roughly <strong>20 tokens per parameter</strong>. For a 7 B parameter model, the optimal
+          training set is ~140 B tokens, not 300 B or 1 T.
+        </p>
+        <p>
+          The practical impact was immediate: the 2022 Chinchilla model (70 B params, 1.4 T tokens)
+          outperformed Gopher (280 B params) on most benchmarks despite being four times smaller —
+          because Gopher was dramatically undertrained relative to its parameter count. Every major
+          model released after 2023 — Llama 1, Mistral, Llama 2, Llama 3, Gemma — explicitly
+          applies the Chinchilla result, and most push <em>beyond</em> it (Llama 3 at 8 B trained
+          on 15 T tokens, far past the Chinchilla-optimal, to produce better inference-time performance
+          on fixed hardware).
+        </p>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key paper</div>
+          <div class="ref-card">
+            <span class="yr">2022</span>
+            <div><cite>Training Compute-Optimal Large Language Models</cite>
+              <span class="auth">Hoffmann, Borgeaud, Mensch, et&nbsp;al. — DeepMind</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">The "Chinchilla" paper. Showed that prior
+              frontier models were dramatically undertrained. The 20-tokens-per-parameter rule rewrote
+              every lab's pretraining strategy within months.
+              <a href="../references.html#ref-26">See reference&nbsp;[26] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <details class="deep">
+          <summary>▸ The Kaplan and Chinchilla power laws, in numbers <span class="tag">deep dive</span></summary>
+          <div>
+            <p>Kaplan et al. fit: <code>L(N, D) ≈ A/N^α + B/D^β + L<sub>∞</sub></code> where
+            α ≈ 0.076, β ≈ 0.095 — parameters decrease loss at similar rates. Under Chinchilla's
+            revised fit, the optimal compute allocation gives <em>N<sub>opt</sub> ∝ C^{0.5}</em>
+            and <em>D<sub>opt</sub> ∝ C^{0.5}</em> — equal scaling. The key intuition: once you've
+            shown the model every token in your dataset 1× (roughly), it has extracted as much
+            signal as a single pass can give. Training longer on the same data yields diminishing
+            returns compared to new data. This is also why data deduplication matters so much —
+            training on duplicates is wasted compute.</p>
+          </div>
+        </details>
+
+        <h2 id="emergence">Emergence, and base vs instruct</h2>
+        <p>
+          One of the most surprising findings from scaling is <span class="gloss" data-term="emergence">emergence</span>:
+          abilities that are absent at small scale and appear — apparently discontinuously — at larger
+          scale<a class="cite" data-ref="wei2022"></a>. Tasks like multi-step arithmetic, logical
+          reasoning, and certain translation pairs show near-zero performance below a threshold model
+          size, then jump sharply. This has been partially explained as an artefact of the metric used
+          (log-probability loss scales smoothly; accuracy on a fixed test does not) — but whether
+          emergence is "real" or metric-artefact, the practical consequence is the same: you can't
+          safely predict all capabilities from interpolation alone<a class="cite" data-ref="weicot2022"></a>.
+        </p>
+        <p>
+          After pretraining, what you have is a <strong>base model</strong> — also called a
+          "pretrained" or "foundation" model. It is a remarkably good next-token predictor. Given
+          "The capital of France is", it will confidently complete the sentence. Given "Write a poem
+          about autumn," it might write a poem — or might continue in the style of an essay about
+          poetry, or generate a Wikipedia-style article header. It doesn't know it's a chatbot. It
+          doesn't follow instructions. It has no sense of self.
+        </p>
+        <p>
+          A base model is the raw material. To get a model that follows instructions, holds a
+          conversation, and refuses harmful requests, you need alignment training —
+          <span class="gloss" data-term="sft">supervised fine-tuning</span> on instruction examples,
+          followed by reinforcement learning from human feedback (Plates 09 and 11). The resulting
+          <strong>instruct model</strong> (also called a "chat model" or "aligned model") is what
+          the public interacts with. Think of the base model as a very well-read intern who has read
+          everything but been given no instructions; the instruct model is that same intern after an
+          intensive onboarding that teaches them what the job actually requires.
+        </p>
+        <p>
+          Understanding the base/instruct distinction matters for practitioners: fine-tuning an
+          instruct model for a new task sometimes hurts because it overwrites alignment;
+          fine-tuning a base model gives more control but requires your own alignment pass.
+          The <span class="gloss" data-term="distillation">distillation</span> path —
+          using a strong instruct model to generate training data for a smaller one — is now the
+          dominant way to produce capable small open models cheaply (Plate 09).
+        </p>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li><strong>Pretraining objective:</strong> predict the next token. The labels are the text itself — no annotation required.</li>
+          <li><strong>Data:</strong> trillions of tokens from Common Crawl and curated corpora. Cleaning, deduplication, and quality filtering matter as much as quantity.</li>
+          <li><strong>Cost:</strong> millions of dollars, thousands of GPU-days, weeks of wallclock time. Checkpoints are sacred.</li>
+          <li><strong>Loss = cross-entropy; perplexity = exp(loss).</strong> A random baseline on a 32k-vocab gives ppl ≈ 32,000; a good model gets single digits.</li>
+          <li><strong>Kaplan scaling laws:</strong> loss is a power law in params, data, and compute — independently predictable.</li>
+          <li><strong>Chinchilla correction (Hoffmann 2022):</strong> scale params and data equally (~20 tokens/param). Pre-Chinchilla models were dramatically undertrained; every modern open model applies this.</li>
+          <li>The output of pretraining is a <strong>base model</strong>. Alignment training (SFT + RLHF/DPO) turns it into an <strong>instruct model</strong>.</li>
+        </ul>
+        <p>Plate 08 goes inside the pretraining loop: the optimizer, learning-rate schedule, mixed precision, and what it looks like when you're running distributed training across hundreds of GPUs.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "07-pretraining" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

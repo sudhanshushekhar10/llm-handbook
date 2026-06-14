@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 04 · Tokenization &amp; Embeddings — The Field Guide to LLMs</title>
+  <meta name="description" content="How raw text becomes numbers a model can read: byte-pair encoding, vocabularies, the context window, and the embedding table that gives tokens meaning.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 04 · Part II — How LLMs Work</div>
+          <h1>Tokenization &amp; Embeddings</h1>
+          <p class="standfirst">A model can't read. It does arithmetic on numbers. Tokenization is the boundary layer that turns your text into integers — and it quietly explains why models cost what they cost, why they're bad at spelling, and why your French prompt is more expensive than your English one.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 14 min</span>
+            <span><b>Prereqs</b> · Plate 01</span>
+            <span><b>Code</b> · transformers · tiktoken</span>
+            <span><b>Widget</b> · Tokenizer playground</span>
+          </div>
+        </div>
+
+        <h2 id="text-to-numbers">Computers don't read; they multiply</h2>
+        <p>
+          Everything a language model does — the billions of parameters, the attention of Plate 05 — is matrix multiplication
+          over floating-point numbers. But your prompt is a string. Something has to translate. That something is the
+          <span class="gloss" data-term="tokenizer">tokenizer</span>: a deterministic, learned function that maps text to a
+          sequence of integer IDs and back again.
+        </p>
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>The tokenizer is a <strong>lexer</strong>. It scans a character stream and emits a sequence of symbols
+          (<span class="gloss" data-term="token">tokens</span>) drawn from a fixed <span class="gloss" data-term="vocabulary">vocabulary</span>
+          — exactly like tokenizing source code before parsing. The difference: this lexer's rules were <em>learned</em>
+          from a corpus, not written by hand, and each token maps to an integer ID via a lookup table.</p>
+        </div>
+
+        <h2 id="why-subwords">Why subwords won: a tale of two bad options</h2>
+        <p>The obvious approaches both failed, and understanding why is the whole story.</p>
+        <div class="callout callout--fail">
+          <div class="callout__tag">What didn't work · character-level</div>
+          <p>Give the model one token per character. The vocabulary is tiny (~100 symbols) and nothing is ever "unknown."
+          But sequences become enormous — "tokenization" is 12 tokens instead of 1 — and the model wastes capacity
+          relearning that <code>t-h-e</code> spells "the." Attention is quadratic in sequence length (Plate 05), so this is
+          ruinously expensive.</p>
+        </div>
+        <div class="callout callout--fail">
+          <div class="callout__tag">What didn't work · word-level</div>
+          <p>Give the model one token per word. Sequences are short, but the vocabulary explodes (millions of words,
+          plurals, typos, names) and any word not seen in training is a dreaded <code>&lt;UNK&gt;</code> — out-of-vocabulary,
+          information lost. You can't enumerate a language.</p>
+        </div>
+        <div class="callout callout--win">
+          <div class="callout__tag">What won · subword tokenization (BPE)</div>
+          <p>Split text into <em>subword</em> pieces. Common words stay whole ("the", "model"); rare words break into parts
+          ("tokeni" + "zation"); truly novel strings fall back to bytes. Vocabulary stays bounded (~30k–130k), sequences
+          stay short, and <strong>nothing is ever out-of-vocabulary</strong>. Introduced to NLP via Byte-Pair Encoding in
+          2016<a class="cite" data-ref="sennrich2016"></a> and refined by SentencePiece<a class="cite" data-ref="kudo2018"></a>,
+          it's still how essentially every modern LLM tokenizes.</p>
+        </div>
+
+        <h2 id="how-bpe-works">How byte-pair encoding actually works</h2>
+        <p>
+          <span class="gloss" data-term="bpe">BPE</span> is almost embarrassingly simple — it's a compression algorithm.
+          Start with text as a sequence of bytes/characters. Find the most frequent adjacent pair, merge it into a new
+          symbol, and record the merge. Repeat thousands of times. The learned list of merges <em>is</em> the tokenizer.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · building a phrasebook by frequency</div>
+          <p>Imagine compressing a book by repeatedly finding the two-symbol sequence that occurs most and giving it a
+          shorthand. First "e"+space, then "th", then "the", then "ing"… After enough passes your shorthand covers most
+          common chunks. BPE is that, run to a target vocabulary size. The vocabulary self-organizes around what's frequent.</p>
+        </div>
+        <p>Try it. Watch how common words become single tokens while rare or compound strings fracture — and how the token
+          count (not the character count) is what fills the <span class="gloss" data-term="context-window">context window</span>:</p>
+
+        <div id="tok-widget"></div>
+
+        <p style="font-size:.92rem;color:var(--text-3)">The widget uses an approximate GPT-style scheme so it runs offline.
+          For exact counts, use a real tokenizer:</p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · inspect a tokenizer</span>
+            <button class="tab" data-pane="hf" aria-selected="true">Hugging Face</button>
+            <button class="tab" data-pane="tk">tiktoken (OpenAI)</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="hf"><pre><code class="language-python"># pip install transformers
+from transformers import AutoTokenizer
+
+tok = AutoTokenizer.from_pretrained("gpt2")     # any model id works
+text = "Fine-tuning with LoRA is surprisingly cheap."
+
+ids = tok(text)["input_ids"]
+print(ids)                                      # the integers the model sees
+print(tok.convert_ids_to_tokens(ids))           # the human-readable pieces ('Ġ' = leading space)
+print(len(ids), "tokens for", len(text), "chars")</code></pre></div>
+          <div class="code-pane" data-pane="tk" hidden><pre><code class="language-python"># pip install tiktoken
+import tiktoken
+
+enc = tiktoken.get_encoding("cl100k_base")       # GPT-3.5/4 family
+text = "Fine-tuning with LoRA is surprisingly cheap."
+
+ids = enc.encode(text)
+print(ids, len(ids))
+print([enc.decode([i]) for i in ids])            # decode each id back to its piece</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output (gpt2)</span></div>
+            <pre><code>[24558, 12, 28286, 351, 5689, 32, 318, 13905, 7026, 13]
+['Fine', '-', 'tuning', 'Ġwith', 'ĠLo', 'RA', 'Ġis', 'Ġsurprisingly', 'Ġcheap', '.']
+10 tokens for 44 chars     # ~4.4 chars/token — typical for English</code></pre>
+          </div>
+        </div>
+
+        <h2 id="tokens-have-consequences">Tokens have consequences</h2>
+        <p>Tokenization isn't a boring preprocessing detail — it leaks into everything:</p>
+        <ul>
+          <li><strong>Cost &amp; limits are per-token.</strong> APIs bill per token; the context window is measured in tokens.
+            "~4 characters per token" for English is the rule of thumb — so ~750 words ≈ 1,000 tokens.</li>
+          <li><strong>Non-English text costs more.</strong> Tokenizers are trained mostly on English, so other languages
+            (and code, and emoji) fragment into more tokens — sometimes 2–3× — making them slower and pricier for the same meaning.</li>
+          <li><strong>Models "can't spell" or count letters</strong> because they never see letters — they see "Ġstrawberry"
+            as one opaque token. The famous "how many r's in strawberry" failure is a tokenization artifact, not a reasoning one.</li>
+          <li><strong>Arithmetic is hard</strong> partly because numbers tokenize inconsistently ("1234" might be one token,
+            "1235" two). Newer tokenizers split digits individually to help.</li>
+        </ul>
+
+        <h2 id="embeddings">From IDs to meaning: the embedding table</h2>
+        <p>
+          A token ID like <code>5689</code> is just an index — it carries no meaning (5689 isn't "near" 5690 in any useful
+          sense). The first thing the model does is look that ID up in an <strong>embedding table</strong>: a big learnable
+          matrix with one row (a vector of, say, 4096 floats) per vocabulary entry. That vector is the token's
+          <span class="gloss" data-term="embedding">embedding</span> — its learned meaning.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · a hashmap to a coordinate</div>
+          <p>The embedding table is a <code>dict[int, float[]]</code>: token ID → point in high-dimensional space. Crucially,
+          the points are arranged so that <em>distance encodes similarity</em> — "king" sits near "queen," "Paris" near
+          "London." Training nudges these coordinates until the geometry of the space mirrors the structure of language.</p>
+        </div>
+        <p>
+          This idea predates LLMs. The 2013 <strong>word2vec</strong> work<a class="cite" data-ref="mikolov2013"></a> showed
+          that learned word vectors capture analogies as <em>arithmetic</em>: the vector for "king" minus "man" plus "woman"
+          lands near "queen." The neural language model that started it all<a class="cite" data-ref="bengio2003"></a> had
+          introduced learned embeddings a decade earlier. In a Transformer, the embedding table is learned jointly with
+          everything else — and the same matrix is often reused at the output to turn final vectors back into
+          <span class="gloss" data-term="logits">logits</span> over the vocabulary (Plate 06).
+        </p>
+
+        <details class="deep">
+          <summary>▸ Token embeddings vs. "an embedding model" <span class="tag">deep dive</span></summary>
+          <div>
+            <p>Don't confuse two uses of the word. The <strong>embedding table</strong> inside an LLM gives each
+            <em>token</em> a vector. An <strong><span class="gloss" data-term="embedding-model">embedding model</span></strong>
+            (Plate 17) is a separate model that maps an entire <em>sentence or document</em> to one vector for semantic
+            search and <span class="gloss" data-term="rag">RAG</span>. Related idea (meaning as geometry), different jobs:
+            one is a lookup row, the other is a whole forward pass producing a single pooled vector.</p>
+          </div>
+        </details>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key papers</div>
+          <div class="ref-card">
+            <span class="yr">2016</span>
+            <div><cite>Neural Machine Translation of Rare Words with Subword Units</cite>
+              <span class="auth">Sennrich, Haddow &amp; Birch — brought BPE to NLP</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">Paired with word2vec<a class="cite" data-ref="mikolov2013"></a> and
+              SentencePiece<a class="cite" data-ref="kudo2018"></a>, these define how text becomes numbers today.
+              <a href="../references.html#ref-8">See reference&nbsp;[8] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>Models operate on integers; the <strong>tokenizer</strong> is the learned lexer that converts text ↔ token IDs.</li>
+          <li><strong>Subword (BPE)</strong> tokenization beat character- and word-level by keeping the vocabulary bounded and never hitting "unknown."</li>
+          <li>Tokens — not characters or words — are the unit of cost, context, and many model quirks (spelling, math, non-English overhead).</li>
+          <li>The <strong>embedding table</strong> maps each token ID to a learned vector where distance ≈ meaning; this is where the model's understanding begins.</li>
+        </ul>
+        <p>With tokens embedded as vectors, we're ready for the engine that mixes them together. Onward to Plate 05, the Transformer.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "04-tokenization" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+  <script src="../assets/js/widgets/tokenizer.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function(){ FGTokenizer.mount("#tok-widget"); });</script>
+</body>
+</html>

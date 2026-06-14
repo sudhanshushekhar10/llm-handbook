@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 12 · Data for Fine-tuning — The Field Guide to LLMs</title>
+  <meta name="description" content="Data quality dominates fine-tuning outcomes. Instruction, chat, and preference formats; chat templates and special tokens; pydantic validation; synthetic data generation; deduplication and decontamination.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 12 · Part IV — Adapting Models</div>
+          <h1>Data for Fine-tuning</h1>
+          <p class="standfirst">Training algorithms are the same for everyone. The dataset is the moat. A small, clean, well-formatted dataset consistently beats a large, noisy one — and getting the format wrong (especially the chat template) can silently waste weeks of GPU time. This plate is the practical guide to building training data that actually works.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 18 min</span>
+            <span><b>Prereqs</b> · Plates 09, 10</span>
+            <span><b>Code</b> · pydantic · transformers</span>
+          </div>
+        </div>
+
+        <h2 id="formats">Formats: instruction, chat, and preference data</h2>
+        <p>
+          Before you write a single training example, you need to decide on your data format. There are three standard
+          shapes, each suited to a different training objective.
+        </p>
+
+        <p><strong>Instruction format (Alpaca-style).</strong> The simplest shape: each example is a flat string
+          containing an instruction and a response, separated by a fixed delimiter. Popularized by Stanford Alpaca<a class="cite" data-ref="touvron2023"></a>,
+          this format is easy to produce and works well for single-turn tasks (classification, extraction, transformation).</p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>jsonl · instruction format (Alpaca)</span></div>
+          <pre><code class="language-json">{"instruction": "Summarize this in one sentence.", "input": "The Eiffel Tower...", "output": "The Eiffel Tower is a 330-meter iron lattice tower built in Paris for the 1889 World's Fair."}
+{"instruction": "Convert this date to ISO 8601.", "input": "June 14, 2026", "output": "2026-06-14"}</code></pre>
+        </div>
+
+        <p><strong>Chat format (messages with roles).</strong> Multi-turn conversations represented as a list of
+          role-tagged messages. This is what most modern chat models expect — and it is the format you must use if you
+          are fine-tuning a chat/instruct variant. The roles are typically <code>system</code>, <code>user</code>, and
+          <code>assistant</code>.</p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>jsonl · chat format (messages list)</span></div>
+          <pre><code class="language-json">{"messages": [
+  {"role": "system", "content": "You are a concise technical writer."},
+  {"role": "user", "content": "What is a B-tree?"},
+  {"role": "assistant", "content": "A B-tree is a self-balancing search tree where each node can have multiple children, optimized for read/write on disk by keeping node size equal to a disk block."}
+]}
+{"messages": [
+  {"role": "user", "content": "Write a Python function to binary search a sorted list."},
+  {"role": "assistant", "content": "def binary_search(arr, target):\n    lo, hi = 0, len(arr)-1\n    while lo <= hi:\n        mid = (lo+hi)//2\n        if arr[mid] == target: return mid\n        elif arr[mid] < target: lo = mid+1\n        else: hi = mid-1\n    return -1"}
+]}</code></pre>
+        </div>
+
+        <p><strong>Preference format (chosen/rejected pairs).</strong> Used for DPO and RLHF (Plate 11). Each example
+          includes a prompt plus two responses: one the model should learn to prefer (chosen) and one it should learn
+          to avoid (rejected). The contrast is the training signal.</p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>jsonl · preference format (DPO)</span></div>
+          <pre><code class="language-json">{"prompt": "What is 17 × 6?",
+ "chosen": "102.",
+ "rejected": "Around 100, give or take."}
+{"prompt": "Explain why quicksort is not stable.",
+ "chosen": "Quicksort is not stable because the partition step can swap equal elements past each other, changing their relative order.",
+ "rejected": "Quicksort uses a pivot to sort. It is very fast on average — O(n log n) — but in the worst case it degrades to O(n²)."}</code></pre>
+        </div>
+
+        <h2 id="chat-templates">Chat templates and special tokens (where fine-tunes go to die)</h2>
+        <p>
+          Here is the single most common cause of silent fine-tuning failure: wrong
+          <span class="gloss" data-term="chat-template">chat template</span>.
+        </p>
+        <p>
+          When a model is instruction-tuned, it learns to respond after seeing a specific sequence of special tokens
+          that delimit turns — think of them as HTTP headers for conversation. Llama-3 uses
+          <code>&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;</code>. Mistral uses
+          <code>[INST]</code> / <code>[/INST]</code>. Phi-3 uses <code>&lt;|user|&gt;</code> /
+          <code>&lt;|assistant|&gt;</code>. These are not interchangeable. If you format your training
+          data using Mistral's template but fine-tune Llama-3, the model sees garbled input — the
+          "headers" land in the wrong places and the model has no idea where one turn ends and the next begins.
+        </p>
+        <p>
+          The fix is to use <code>tokenizer.apply_chat_template()</code>, which reads the template baked into the
+          tokenizer config and applies it automatically. Always use it. Never format manually.
+        </p>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · wrong chat template silently ruins fine-tunes</div>
+          <p>The training loss will still fall. The model will still produce text. You will not see an error. You will
+          only discover the problem when you run inference and the model ignores your instructions, hallucinates role names,
+          or refuses to stop generating. Chat template mismatches are often diagnosed weeks after a fine-tune completes.
+          Use <code>tokenizer.apply_chat_template()</code> and then print a decoded example to verify before training.</p>
+        </div>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · apply_chat_template correctly</span>
+            <button class="tab" data-pane="local" aria-selected="true">Format examples</button>
+            <button class="tab" data-pane="cloud">Verify before training</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python">from transformers import AutoTokenizer
+
+model_id = "mistralai/Mistral-7B-Instruct-v0.3"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+# Raw messages list — model-agnostic
+messages = [
+    {"role": "system", "content": "You are a helpful coding assistant."},
+    {"role": "user", "content": "Write a Python hello world."},
+    {"role": "assistant", "content": 'print("Hello, world!")'},
+]
+
+# apply_chat_template reads the tokenizer's built-in jinja template
+# add_generation_prompt=False because we're formatting training examples
+# (the assistant turn is already provided — we don't want an open generation slot)
+formatted = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,        # return a string, not token IDs
+    add_generation_prompt=False,
+)
+print(formatted)</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python">from transformers import AutoTokenizer
+from datasets import Dataset
+
+model_id = "mistralai/Mistral-7B-Instruct-v0.3"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+# A batch of raw training examples (messages format)
+raw_examples = [
+    {"messages": [
+        {"role": "user", "content": "What is a REST API?"},
+        {"role": "assistant", "content": "A REST API uses HTTP verbs (GET, POST, PUT, DELETE) to manipulate resources identified by URLs, with no client session state stored on the server."},
+    ]},
+    {"messages": [
+        {"role": "system", "content": "Always respond in JSON."},
+        {"role": "user", "content": "Name three programming languages."},
+        {"role": "assistant", "content": '{"languages": ["Python", "Go", "Rust"]}'},
+    ]},
+]
+
+def format_example(example):
+    return {
+        "text": tokenizer.apply_chat_template(
+            example["messages"],
+            tokenize=False,
+            add_generation_prompt=False,
+        )
+    }
+
+dataset = Dataset.from_list(raw_examples)
+formatted_dataset = dataset.map(format_example)
+
+# CRITICAL: always inspect at least one formatted example before training
+print("=== DECODED TRAINING EXAMPLE ===")
+print(formatted_dataset[0]["text"])
+print()
+print("=== TOKENIZED LENGTH ===")
+toks = tokenizer(formatted_dataset[0]["text"])
+print(f"{len(toks['input_ids'])} tokens")</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output (Mistral template)</span></div>
+            <pre><code>&lt;s&gt;[INST] What is a REST API? [/INST] A REST API uses HTTP verbs...&lt;/s&gt;
+# ^ Mistral's format: [INST] marks user turns, [/INST] closes them
+# For Llama-3 the same messages produce:
+# &lt;|begin_of_text|&gt;&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;\n\nWhat is...&lt;|eot_id|&gt;
+# The token IDs are completely different — never hardcode the template string
+
+=== DECODED TRAINING EXAMPLE ===
+&lt;s&gt;[INST] What is a REST API? [/INST] A REST API uses HTTP verbs ...&lt;/s&gt;
+
+=== TOKENIZED LENGTH ===
+47 tokens</code></pre>
+          </div>
+        </div>
+
+        <h2 id="pydantic-validation">Validating data with pydantic</h2>
+        <p>
+          Data pipelines for fine-tuning are surprisingly brittle: a single malformed example in a 10,000-row JSONL file
+          can crash a training run hours in, or silently corrupt gradients if the tokenizer interprets it differently
+          than expected. The solution is the same as for any data-ingestion pipeline in a backend service: validate at
+          the boundary.
+        </p>
+        <p>
+          <span class="gloss" data-term="pydantic">Pydantic</span> is the natural tool here. If you've used FastAPI
+          for request validation, you already know the pattern: define a typed schema, parse every record through it,
+          and fail loudly on malformed input rather than letting errors propagate silently into your model.
+        </p>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>Think of training examples as typed DTOs (data transfer objects) that cross the boundary between your
+          data pipeline and the training loop. Pydantic gives you the same safety guarantee as a strongly-typed API
+          contract: if the data doesn't match the schema, you find out at ingestion time — not after a 4-hour GPU run.
+          The same schemas also enforce <span class="gloss" data-term="structured-output">structured outputs</span> at
+          inference time: define the response schema in pydantic, use <code>model_json_schema()</code> to generate
+          a JSON schema, and pass it to the model as a grammar or tool definition.</p>
+        </div>
+
+        <div class="codeblock">
+          <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>python · pydantic schema for training data</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <pre><code class="language-python">from pydantic import BaseModel, field_validator, model_validator
+from typing import Literal
+import json
+
+# --- Schema for a single chat training example ---
+class Message(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def content_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Message content must not be blank")
+        return v
+
+class ChatExample(BaseModel):
+    messages: list[Message]
+
+    @model_validator(mode="after")
+    def validate_structure(self) -> "ChatExample":
+        roles = [m.role for m in self.messages]
+        # Must end with assistant turn
+        if roles[-1] != "assistant":
+            raise ValueError(f"Last message must be 'assistant', got '{roles[-1]}'")
+        # Must have at least one user turn
+        if "user" not in roles:
+            raise ValueError("Training example must contain at least one user turn")
+        return self
+
+# --- Schema for a preference example (DPO) ---
+class PreferenceExample(BaseModel):
+    prompt: str
+    chosen: str
+    rejected: str
+
+    @model_validator(mode="after")
+    def chosen_differs_from_rejected(self) -> "PreferenceExample":
+        if self.chosen.strip() == self.rejected.strip():
+            raise ValueError("chosen and rejected must differ")
+        return self
+
+# --- Validate a JSONL file at load time ---
+def load_chat_dataset(path: str) -> list[ChatExample]:
+    valid, errors = [], []
+    with open(path) as f:
+        for i, line in enumerate(f):
+            try:
+                record = json.loads(line)
+                valid.append(ChatExample.model_validate(record))
+            except Exception as e:
+                errors.append((i, str(e)))
+    if errors:
+        print(f"[warn] {len(errors)} invalid examples (first 3):")
+        for idx, msg in errors[:3]:
+            print(f"  line {idx}: {msg}")
+    print(f"Loaded {len(valid)} valid examples.")
+    return valid
+
+# --- Usage ---
+# examples = load_chat_dataset("train.jsonl")
+# Will print a warning for any malformed row instead of crashing silently.
+
+# --- Structured output: generate the JSON schema for inference ---
+schema = PreferenceExample.model_json_schema()
+print(json.dumps(schema, indent=2))</code></pre>
+        </div>
+
+        <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+          <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+          <pre><code>Loaded 2847 valid examples.
+[warn] 3 invalid examples (first 3):
+  line 12: Last message must be 'assistant', got 'user'
+  line 89: Message content must not be blank
+  line 203: chosen and rejected must differ
+{
+  "title": "PreferenceExample",
+  "type": "object",
+  "properties": {
+    "prompt": {"type": "string"},
+    "chosen": {"type": "string"},
+    "rejected": {"type": "string"}
+  },
+  "required": ["prompt", "chosen", "rejected"]
+}</code></pre>
+        </div>
+
+        <h2 id="synthetic-data">Synthetic data and distillation</h2>
+        <p>
+          One of the most important shifts in fine-tuning practice since 2023: you don't have to collect all your
+          training data from humans. You can generate it from a stronger model and use it to train a weaker one —
+          this is called <span class="gloss" data-term="distillation">distillation</span><a class="cite" data-ref="bai2022"></a>.
+        </p>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · synthetic data = a teacher writing the textbook</div>
+          <p>Traditional data collection is like assigning homework: you give students (human annotators) problems to solve and collect their answers. Synthetic data is like the teacher writing the textbook directly: GPT-4 or Claude generates the worked examples, and the student model (your smaller model) learns from them. The textbook can be high quality, large-scale, and precisely calibrated to the skills you want to teach — as long as the teacher model knows them well.</p>
+        </div>
+
+        <p>
+          The practical workflow: write a diverse set of "seed" prompts covering the tasks you want the model to handle,
+          pass each to a capable model (GPT-4o, Claude 3.5 Sonnet, or even a larger open model like Llama-3-70B) with
+          a careful system prompt specifying the desired output format, validate the outputs with pydantic, filter for
+          quality, and use the passing examples as training data. Touvron et al.<a class="cite" data-ref="touvron2023"></a>
+          showed this works remarkably well for bootstrapping instruction-following capability.
+        </p>
+        <p>
+          A few caveats apply:
+        </p>
+        <ul>
+          <li><strong>Check provider terms of service.</strong> Many providers (OpenAI included) prohibit using their API outputs to train competing models. Check before using commercial APIs for distillation.</li>
+          <li><strong>Diversity is critical.</strong> If your seed prompts are too similar, the model learns a narrow response pattern and fails to generalize. Aim for broad topic coverage, varying difficulty, and multiple output styles.</li>
+          <li><strong>The teacher's mistakes become the student's curriculum.</strong> If the teacher model hallucinates or produces subtly wrong answers in your domain, those errors land in your training set. Always validate outputs against ground truth where possible.</li>
+        </ul>
+
+        <h2 id="quality-and-dedup">Quality, dedup, and decontamination</h2>
+        <p>
+          The mantra of modern fine-tuning data curation: <strong>small and clean beats large and noisy.</strong>
+          LIMA<a class="cite" data-ref="zheng2023"></a> demonstrated that 1,000 carefully curated instruction examples
+          could produce a competitive chat model, outperforming models trained on far larger but lower-quality datasets.
+        </p>
+        <p><strong>Deduplication.</strong> Duplicate examples cause overfitting — the model memorizes the duplicated
+          text rather than learning to generalize. Near-duplicate examples are almost as bad. Use MinHash or a simple
+          hash on a normalized form of the text to detect and remove duplicates before training. A 10% dedup pass on
+          a 100k-example dataset is cheap and consistently improves results.</p>
+        <p><strong>Quality filtering.</strong> Common heuristics: remove examples below a minimum token length (stubs
+          that don't teach anything), filter out examples where the response is shorter than the instruction (often a sign
+          of a collapsed or incomplete generation), and use a fast classifier to flag examples that are off-topic or
+          contain known-bad patterns (repetition, profanity where unwanted, formatting artifacts from web scraping).</p>
+        <p><strong>Decontamination.</strong> This one is easy to miss: if your fine-tuning data contains examples from
+          your evaluation benchmarks (MMLU, HumanEval, etc.), your benchmark scores will be artificially inflated — the
+          model has seen the test. This is called data contamination, and it is widespread in published results<a class="cite" data-ref="zheng2023"></a>. Before training, compute n-gram overlap between your training set and your
+          eval sets and remove matches. The threshold is usually: if any 10-gram in the eval example appears in a training
+          example, remove the training example.</p>
+
+        <h2 id="how-much-data">How much data do you actually need?</h2>
+        <p>
+          The answer depends on what you're trying to teach, but here are calibrated rules of thumb from practical
+          experience:
+        </p>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Typical range</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Format / schema enforcement</td>
+                <td>50–500 examples</td>
+                <td>Models learn format quickly. More examples rarely help; focus on coverage of edge cases.</td>
+              </tr>
+              <tr>
+                <td>Persona / tone / style</td>
+                <td>200–2,000 examples</td>
+                <td>Consistent style across diverse topics. Quality matters more than count.</td>
+              </tr>
+              <tr>
+                <td>Narrow domain skill (e.g., SQL generation)</td>
+                <td>1,000–10,000 examples</td>
+                <td>Cover the space of query patterns. Include edge cases and error handling.</td>
+              </tr>
+              <tr>
+                <td>General instruction following (SFT)</td>
+                <td>10,000–100,000 examples</td>
+                <td>Diverse topic coverage critical. LIMA showed 1k can work if extremely curated.</td>
+              </tr>
+              <tr>
+                <td>Preference alignment (DPO)</td>
+                <td>5,000–50,000 pairs</td>
+                <td>Quality of the preference signal (margin between chosen/rejected) matters more than count.</td>
+              </tr>
+              <tr>
+                <td>Continued pretraining (new domain)</td>
+                <td>1B–100B tokens</td>
+                <td>Domain text, not instruction format. Unstructured corpus is fine here.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          The universal advice: start with fewer, higher-quality examples than you think you need. Train a small model
+          (or use fewer steps on the target model), evaluate on a held-out set, then scale up data only if the model is
+          clearly underfitting. Overfitting on a small, curated dataset is a much more common failure mode than
+          underfitting on a large, noisy one.
+        </p>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>Three data formats: <strong>instruction</strong> (flat string, single-turn), <strong>chat</strong> (messages list with roles, multi-turn), <strong>preference</strong> (chosen/rejected pairs for DPO). Match the format to your training objective.</li>
+          <li>The <strong><span class="gloss" data-term="chat-template">chat template</span></strong> is not optional. Use <code>tokenizer.apply_chat_template()</code> always. Always print a decoded example to verify before training. Wrong template → silent failure.</li>
+          <li><strong>Pydantic schemas</strong> at ingestion time catch malformed examples before they corrupt training. Treat training data like typed API contracts — validate at the boundary, fail loudly.</li>
+          <li><strong>Synthetic data / <span class="gloss" data-term="distillation">distillation</span></strong> from a stronger model can bootstrap a high-quality dataset at low cost. Watch for provider TOS, diversity gaps, and teacher errors.</li>
+          <li><strong>Dedup, quality filter, decontaminate</strong> (remove eval-set overlap) before training. These steps are cheap relative to the compute saved by not training on garbage.</li>
+          <li><strong>Small and clean beats large and noisy.</strong> Start with fewer examples than you think you need, evaluate, then scale. The most common failure mode is overfitting on a small, noisy dataset — not having too little data.</li>
+        </ul>
+        <p>
+          With data pipelines covered, the next plate moves from preparing models to deploying them:
+          <a href="13-quantization.html">Plate&nbsp;13</a> on quantization — how to shrink a model's memory footprint
+          by 4–8× without meaningfully degrading quality, making it practical to serve large models on commodity hardware.
+        </p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "12-data-for-finetuning" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 15 · Beyond the Vanilla Transformer — The Field Guide to LLMs</title>
+  <meta name="description" content="Mixture-of-Experts, Grouped Query Attention, long-context RoPE scaling, and the rise of State Space Models: the architectural innovations that define modern LLMs.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 15 · Part VI — Advanced Architectures</div>
+          <h1>Beyond the Vanilla Transformer</h1>
+          <p class="standfirst">The 2017 Transformer was a brilliant blueprint, but it came with expensive defaults: every token attends to every other token, every parameter activates for every input. Modern architectures surgically fix these bottlenecks — and understanding the fixes tells you a lot about where the field is going.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 18 min</span>
+            <span><b>Prereqs</b> · Plates 05, 13, 14</span>
+            <span><b>Code</b> · transformers · llama.cpp</span>
+          </div>
+        </div>
+
+        <h2 id="the-tax">The vanilla Transformer's expensive habits</h2>
+        <p>
+          The 2017 "Attention is All You Need"<a class="cite" data-ref="vaswani2017"></a> architecture made two choices that looked fine at 65M parameters but become brutal at 70B:
+        </p>
+        <ul>
+          <li><strong>Full attention</strong>: every query attends to every key. Cost is <em>O(n²)</em> in sequence length — double the context, quadruple the memory and compute.</li>
+          <li><strong>Dense feed-forward</strong>: all parameters fire for every token. You're paying for a 70B-parameter model on every single token, even when most of those parameters are irrelevant to the current input.</li>
+        </ul>
+        <p>
+          Modern architectures attack each problem separately. The result is a family of models that are faster, cheaper, longer-range, and in some cases genuinely smarter — while still being Transformer-based at heart. Let's walk through the big ideas.
+        </p>
+
+        <h2 id="gqa-mqa">Grouped Query Attention: fewer KV heads, same quality</h2>
+        <p>
+          Recall from Plate 05 that multi-head <span class="gloss" data-term="attention">attention</span> runs <em>h</em> independent attention heads. In standard MHA, each head has its own Q, K, V projection. The <span class="gloss" data-term="kv-cache">KV cache</span> stores one K and V tensor per head, per layer, per token in the sequence. At 32 heads and a 128K context, that's enormous.
+        </p>
+        <p>
+          <strong>Multi-Query Attention (MQA)</strong> — proposed in the Shazeer 2019 fast decoding paper<a class="cite" data-ref="shazeer2017"></a> — uses one shared K and one shared V across all query heads. Memory shrinks by <em>h×</em>, decode is fast, but quality can slip on subtle tasks. <strong>Grouped Query Attention (GQA)</strong><a class="cite" data-ref="ainslie2023"></a> splits the difference: group the <em>h</em> query heads into <em>g</em> groups, one K/V pair per group.
+        </p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 540 200" role="img" aria-label="MHA vs GQA vs MQA comparison diagram">
+            <!-- MHA -->
+            <text x="80" y="20" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--text-2)">MHA</text>
+            <text x="80" y="38" text-anchor="middle" font-size="10" fill="var(--text-3)">8 Q, 8 K, 8 V</text>
+            <g>
+              <rect x="10" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="38" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="66" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="94" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <text x="80" y="43" text-anchor="middle" font-size="9" fill="var(--text-2)">Q heads</text>
+              <rect x="10" y="100" width="24" height="18" rx="3" fill="#f59e0b" opacity="0.8"/>
+              <rect x="38" y="100" width="24" height="18" rx="3" fill="#f59e0b" opacity="0.8"/>
+              <rect x="66" y="100" width="24" height="18" rx="3" fill="#f59e0b" opacity="0.8"/>
+              <rect x="94" y="100" width="24" height="18" rx="3" fill="#f59e0b" opacity="0.8"/>
+              <text x="80" y="95" text-anchor="middle" font-size="9" fill="var(--text-2)">KV heads (×8)</text>
+            </g>
+            <!-- GQA -->
+            <text x="270" y="20" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--text-2)">GQA</text>
+            <text x="270" y="38" text-anchor="middle" font-size="10" fill="var(--text-3)">8 Q, 2 K, 2 V</text>
+            <g>
+              <rect x="200" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="228" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="256" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="284" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="312" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.35"/>
+              <rect x="312" y="50" width="24" height="18" rx="3" fill="none" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3,2"/>
+              <text x="270" y="43" text-anchor="middle" font-size="9" fill="var(--text-2)">Q heads (shared)</text>
+              <rect x="228" y="100" width="24" height="18" rx="3" fill="#f59e0b" opacity="0.8"/>
+              <rect x="284" y="100" width="24" height="18" rx="3" fill="#f59e0b" opacity="0.8"/>
+              <text x="270" y="95" text-anchor="middle" font-size="9" fill="var(--text-2)">KV groups (×2)</text>
+              <line x1="215" y1="68" x2="240" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+              <line x1="240" y1="68" x2="240" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+              <line x1="268" y1="68" x2="240" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+              <line x1="296" y1="68" x2="296" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+              <line x1="323" y1="68" x2="296" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+            </g>
+            <!-- MQA -->
+            <text x="460" y="20" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--text-2)">MQA</text>
+            <text x="460" y="38" text-anchor="middle" font-size="10" fill="var(--text-3)">8 Q, 1 K, 1 V</text>
+            <g>
+              <rect x="400" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="428" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="456" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <rect x="484" y="50" width="24" height="18" rx="3" fill="var(--accent)" opacity="0.8"/>
+              <text x="460" y="43" text-anchor="middle" font-size="9" fill="var(--text-2)">Q heads (all)</text>
+              <rect x="448" y="100" width="24" height="18" rx="3" fill="#f59e0b" opacity="0.8"/>
+              <text x="460" y="95" text-anchor="middle" font-size="9" fill="var(--text-2)">1 shared KV</text>
+              <line x1="412" y1="68" x2="460" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+              <line x1="440" y1="68" x2="460" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+              <line x1="468" y1="68" x2="460" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+              <line x1="496" y1="68" x2="460" y2="100" stroke="#f59e0b" stroke-width="1" opacity="0.5"/>
+            </g>
+            <text x="270" y="170" text-anchor="middle" font-size="10" fill="var(--text-3)">GQA = the Goldilocks zone between quality (MHA) and speed (MQA)</text>
+          </svg>
+          <figcaption><b>MHA vs GQA vs MQA.</b> GQA groups query heads to share fewer KV projections, shrinking the KV cache without the full quality hit of MQA. Llama 3 (70B) uses 8 KV groups for 64 query heads.</figcaption>
+        </figure>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>Think of GQA as <strong>connection pooling for attention</strong>. Each "query connection" doesn't need its own dedicated K/V socket — multiple queries share the same cached K/V pair. The KV cache is the bottleneck resource at long contexts, and GQA is the pooling layer that lets you serve more queries from the same memory budget.</p>
+        </div>
+
+        <div class="callout callout--win">
+          <div class="callout__tag">What won — and why</div>
+          <p>GQA is now the default in Llama 3, Mistral, Gemma, Phi-3, and most production models released since 2023. It shrinks KV cache memory by 4–8× with minimal quality loss on standard benchmarks. MQA was too aggressive; MHA is too expensive. GQA found the sweet spot.</p>
+        </div>
+
+        <h2 id="rope">RoPE: rotary embeddings and long context</h2>
+        <p>
+          How does a model know token position? The vanilla Transformer used learned <span class="gloss" data-term="positional-encoding">positional encoding</span> — add a fixed vector to each token embedding before the first layer. It worked, but it was hard to extrapolate to lengths not seen during training.
+        </p>
+        <p>
+          <strong>Rotary Position Embedding (RoPE)</strong><a class="cite" data-ref="su2021"></a> rotates the Q and K vectors by an angle proportional to position <em>before</em> the dot product. The rotation is applied in pairs of dimensions; when you take the dot product Q·K, the result depends only on the <em>relative</em> distance between the two positions. No absolute position is ever explicitly encoded.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · phase angles in signal processing</div>
+          <p>Imagine two radio signals. Their frequencies encode where they are in time; when you correlate two signals, you get a phase difference that tells you how far apart they were — not where each started. RoPE is the same idea: the "frequency" encodes absolute position, the dot product measures relative offset. This is why RoPE generalises to unseen context lengths more gracefully than additive positional encoding.</p>
+        </div>
+        <p>
+          To push beyond training context lengths, labs use <strong>RoPE scaling</strong>: divide all the rotation frequencies by a constant factor (linear scaling) or use more sophisticated non-linear schemes (YaRN, NTK-aware interpolation). Llama 3.1's 128K context window was achieved via a YaRN-like extension on top of RoPE trained at 8K.
+        </p>
+
+        <h2 id="moe">Mixture of Experts: sparse parameters</h2>
+        <p>
+          The feed-forward layer is where most Transformer parameters live. In a standard model, every token passes through every FFN parameter — dense and expensive. <span class="gloss" data-term="moe">Mixture of Experts (MoE)</span><a class="cite" data-ref="fedus2021"></a> replaces the single FFN with <em>N</em> expert networks and a router.
+        </p>
+        <p>
+          The router is a small linear layer that scores each expert for the current token, then selects the top-<em>k</em> (usually 2–4 out of 8–64). Only those experts compute; the rest sleep. The model has the <em>capacity</em> of a large dense model but the <em>compute cost</em> of a much smaller one.
+        </p>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key paper</div>
+          <div class="ref-card"><span class="yr">2021</span>
+            <div><cite>Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity</cite>
+              <span class="auth">Fedus, Zoph, Shazeer — Google Brain</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">Demonstrated that routing to a single expert per token (top-1) scales cleanly to trillion-parameter models with constant compute. Spawned the modern MoE wave. <a href="../references.html#ref-21">See reference [21] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · call-centre routing</div>
+          <p>A large call centre has specialists (billing, tech support, complaints). Every call goes to the router (the IVR), which picks the right expert or two for this caller. The company has all the expertise of 50 specialists but each call only activates 2. That's MoE: massive capacity, cheap per-query.</p>
+        </div>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · "8×7B" doesn't mean 56B active parameters</div>
+          <p>Mixtral 8×7B has ~47B total parameters (routed FFNs + shared attention). Each token activates ~2 experts, so the active parameter count during a forward pass is roughly 12–13B — similar to a dense 13B model's compute cost. The "47B" model runs more like a 12B model in practice. Don't confuse total parameters with activated parameters in MoE.</p>
+        </div>
+
+        <h2 id="moe-serving">MoE in practice: loading all experts</h2>
+        <p>
+          The catch: even though only a fraction of parameters activate per token, <em>all</em> experts still need to be in memory (you don't know in advance which expert the router will pick). A Mixtral 8×7B model requires ~47B parameters × 2 bytes = ~94 GB in fp16. You need a multi-GPU setup or heavy quantization just to load it.
+        </p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · load a Mixtral MoE model</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · Mac (GGUF)</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-bash"># Ollama ships quantized Mixtral GGUF — runs on M2/M3 with ~48 GB RAM
+ollama pull mixtral:8x7b-instruct-v0.1-q4_K_M
+ollama run mixtral:8x7b-instruct-v0.1-q4_K_M</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install transformers accelerate bitsandbytes
+# Needs ~48 GB VRAM (A100 80GB or multi-GPU); 4-bit cuts to ~25 GB
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+name = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
+
+tok = AutoTokenizer.from_pretrained(name)
+model = AutoModelForCausalLM.from_pretrained(
+    name, quantization_config=bnb, device_map="auto"
+)
+
+msgs = [{"role": "user", "content": "Explain mixture of experts in one paragraph."}]
+inputs = tok.apply_chat_template(msgs, return_tensors="pt", add_generation_prompt=True).to(model.device)
+out = model.generate(inputs, max_new_tokens=200, temperature=0.7)
+print(tok.decode(out[0], skip_special_tokens=True))</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>Mixture of Experts (MoE) is an architecture where the model has multiple
+"expert" sub-networks, but only a few are activated for each input token...
+# Router statistics (visible in verbose mode):
+# Expert 3 selected for 31% of tokens (likely a general-purpose expert)
+# Expert 7 selected for 8% of tokens (likely a code/syntax expert)</code></pre>
+          </div>
+        </div>
+
+        <h2 id="ssm">State Space Models: the challenger</h2>
+        <p>
+          All the architectures above are still attention-based. But there's a fundamentally different approach growing in popularity: <strong>State Space Models (SSMs)</strong>, with <strong>Mamba</strong><a class="cite" data-ref="gu2023"></a> as the flagship.
+        </p>
+        <p>
+          SSMs replace attention with a recurrence over a compressed hidden state. Each token updates a fixed-size state vector instead of attending over all previous tokens. The key insight in Mamba is making the state transition parameters <em>input-dependent</em> (selective SSM) — the model learns which information to keep and which to forget, rather than using a fixed filter.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · stream vs. replay buffer</div>
+          <p>Attention is like a replay buffer — you store every past frame and can look back at any of them. The cost grows as the buffer fills. An SSM is more like a running stream consumer: you process each item and update a compact summary. The cost is constant per token regardless of context length. The trade-off: you can't look back at a specific frame — only query the current summary. For tasks requiring precise retrieval (exact quotes, long-range references), attention wins. For smooth, streaming tasks, SSMs are very fast.</p>
+        </div>
+
+        <div class="callout callout--fail">
+          <div class="callout__tag">What hasn't worked yet</div>
+          <p>Pure SSM models like early Mamba versions struggle on tasks that require precise recall of information from far back in the context — the type of thing attention handles trivially via direct lookup. Hybrid architectures (alternating SSM and attention layers) like Mamba-2 and Jamba try to get the best of both worlds, and this is active research territory. The jury is still out on whether SSMs can fully replace attention at scale.</p>
+        </div>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key paper</div>
+          <div class="ref-card"><span class="yr">2023</span>
+            <div><cite>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</cite>
+              <span class="auth">Gu &amp; Dao — Carnegie Mellon / Princeton</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">Demonstrated that a selective SSM could match Transformer quality on language modelling while scaling linearly (not quadratically) with sequence length. The most credible Transformer challenger to date. <a href="../references.html#ref-43">See reference [43] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <h2 id="what-to-pick">Choosing an architecture in 2025</h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Concern</th><th>What to use</th><th>Examples</th></tr></thead>
+            <tbody>
+              <tr><td>General quality / instruct</td><td>Dense Transformer + GQA + RoPE</td><td>Llama 3, Gemma 2, Phi-3</td></tr>
+              <tr><td>Cost-efficient large model</td><td>MoE + GQA</td><td>Mixtral 8×7B, Grok-1, Qwen-MoE</td></tr>
+              <tr><td>Very long context (&gt;100K)</td><td>RoPE scaling + GQA + sliding window</td><td>Llama 3.1, Mistral-NeMo</td></tr>
+              <tr><td>Ultra-fast streaming / edge</td><td>SSM / Hybrid SSM-Attn</td><td>Mamba-2, Jamba</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          For most production workloads today, a well-quantized dense model with GQA (served via vLLM or Ollama) is the pragmatic default. MoE models are compelling if you have the memory budget. SSMs are worth watching but not yet the safe choice for critical applications.
+        </p>
+
+        <details class="deep">
+          <summary>▸ How RoPE rotation works mathematically <span class="tag">deep dive</span></summary>
+          <div>
+            <p>RoPE applies a rotation matrix R(θ) to each pair of dimensions of Q and K, where θ = position × base_freq^(−2i/d) and i is the dimension index. This is exactly the encoding used in sinusoidal positional encoding, but applied via rotation rather than addition.</p>
+            <p>The dot product Q·K then computes: (R(m)q)·(R(n)k) = q·R(n−m)k, which depends only on the relative distance (n−m). This "relative position by construction" property is why RoPE generalizes better — you're never asking the model to recognize absolute positions it hasn't seen; it always sees relative distances which are learnable regardless of context length.</p>
+            <p>Long-context extensions (YaRN, NTK) work by rescaling the base frequency from the default 10,000 to a much higher value (e.g., 500,000), which stretches the rotation cycles so that the angular difference between positions that are far apart is still distinguishable.</p>
+          </div>
+        </details>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li><strong>GQA</strong> groups query heads to share fewer K/V projections — shrinks the KV cache 4–8× with minimal quality loss. Now standard in every major model family.</li>
+          <li><strong>RoPE</strong> encodes relative position via rotation; extrapolates to unseen context lengths better than additive schemes. Long-context extensions (YaRN, NTK) push to 128K+ tokens.</li>
+          <li><strong>MoE</strong> replaces the dense FFN with <em>N</em> expert networks and a learned router — massive parameter count, small per-token compute. The "47B" Mixtral runs like a 12B model.</li>
+          <li><strong>SSMs (Mamba)</strong> replace attention with a selective linear recurrence — O(n) cost vs O(n²), but weaker on precise long-range recall. Hybrid models are the current frontier.</li>
+          <li>For production today: dense GQA + RoPE is the safe default; MoE if you need scale on a budget; SSMs worth watching.</li>
+        </ul>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "15-advanced-architectures" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

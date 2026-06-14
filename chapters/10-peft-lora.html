@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 10 · PEFT &amp; LoRA — The Field Guide to LLMs</title>
+  <meta name="description" content="Parameter-efficient fine-tuning: adapters, LoRA, and QLoRA. How freezing a model and training tiny low-rank deltas lets you fine-tune a 7B model on a single GPU.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 10 · Part IV — Adapting Models</div>
+          <h1>PEFT &amp; LoRA</h1>
+          <p class="standfirst">Full fine-tuning of a 7B model can demand 100+ GB of GPU memory. LoRA does the same job by freezing the model and training a set of tiny "patch" matrices — under 1% of the parameters. This is the single most important practical technique in the open-model world.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 20 min</span>
+            <span><b>Prereqs</b> · Plates 06, 08, 09</span>
+            <span><b>Code</b> · peft · bitsandbytes · trl</span>
+            <span><b>Widget</b> · VRAM calculator</span>
+          </div>
+        </div>
+
+        <h2 id="the-problem">The problem: full fine-tuning is a memory monster</h2>
+        <p>
+          <span class="gloss" data-term="fine-tuning">Fine-tuning</span> means continuing training on your own data. The naive
+          way — update every weight — is called <strong>full fine-tuning</strong>, and its memory cost is brutal. It's not
+          just the weights. For each parameter you also store a gradient and, for the <span class="gloss" data-term="optimizer">AdamW</span>
+          optimizer, two more "moment" buffers (plus an fp32 master copy). The rule of thumb is roughly <strong>16 bytes per
+          parameter</strong> just for the model state — before activations.
+        </p>
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · the 16×  rule</div>
+          <p>An 8-billion-parameter model is ~16 GB in fp16 just to <em>hold</em>. To <em>train</em> it fully: 8B × 16 bytes ≈
+          <strong>128 GB</strong> of optimizer/gradient/weight state, plus activations. That's multiple A100s for one small
+          model. Try it in the calculator below — switch Mode to "full fine-tune" and watch the number explode.</p>
+        </div>
+
+        <div id="vram-widget"></div>
+
+        <h2 id="peft">The idea: don't move the mountain</h2>
+        <p>
+          <span class="gloss" data-term="peft">Parameter-Efficient Fine-Tuning (PEFT)</span> asks a subversive question: do we
+          really need to update all the weights? Pretraining already taught the model language and world knowledge. Adapting
+          it to a new style or task is a <em>small</em> change. So: <strong>freeze the giant pretrained model, and train only
+          a tiny number of new parameters.</strong> No gradients or optimizer states for the frozen 8B — only for the small new part.
+        </p>
+        <p>
+          The first widely used PEFT method was the <strong>adapter</strong><a class="cite" data-ref="houlsby2019"></a>:
+          insert small trainable bottleneck modules between the frozen layers. It worked, but it added a little latency at
+          inference. The method that took over fixed that.
+        </p>
+
+        <h2 id="lora">LoRA: training a patch, not a fork</h2>
+        <p>
+          <span class="gloss" data-term="lora">LoRA</span> — Low-Rank Adaptation<a class="cite" data-ref="hu2021"></a> — rests
+          on an observation: the <em>change</em> a fine-tune makes to a weight matrix is "low rank." It doesn't need the full
+          expressive power of a dense update; a thin one suffices. So instead of learning a full update matrix ΔW (which is as
+          big as W), LoRA learns two skinny matrices <strong>A</strong> and <strong>B</strong> whose product approximates it:
+        </p>
+        <p style="font-family:var(--font-mono);text-align:center;font-size:1.05rem;color:var(--accent-deep)">
+          W<sub>effective</sub> = W<sub>frozen</sub> + (α / r) · B·A &nbsp;&nbsp;&nbsp; where A is r×d, B is d×r, r ≪ d
+        </p>
+        <p>
+          The original W never changes. Only A and B are trained. With a <span class="gloss" data-term="rank">rank</span>
+          <code>r</code> of 8 or 16 against a dimension <code>d</code> of 4096, you're training a fraction of a percent of the
+          parameters — and you only pay optimizer/gradient memory on <em>those</em>.
+        </p>
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV · LoRA is a git patch</div>
+          <p>The base model is a huge, read-only dependency at a pinned version. A LoRA adapter is a <strong>diff</strong>
+          against it — a few megabytes that say "add this delta to these matrices." You can keep one base model in memory and
+          hot-swap many adapters (a customer-support patch, a SQL patch, a JSON-mode patch) on top of it, like applying
+          different feature branches to the same checkout. At deploy time you can even <code>merge</code> the patch into the
+          weights so there's <em>zero</em> extra inference cost.</p>
+        </div>
+        <div class="callout callout--win">
+          <div class="callout__tag">Why LoRA won over adapters</div>
+          <p>Because <code>B·A</code> can be <em>folded back</em> into <code>W</code> after training (it's just addition),
+          a merged LoRA model has <strong>identical architecture and identical inference speed</strong> to the original — no
+          extra modules, no latency. You get the storage and memory savings during training and pay nothing at serving time.
+          That combination is why LoRA is everywhere.</p>
+        </div>
+
+        <details class="deep">
+          <summary>▸ rank, alpha, and target modules — the knobs that matter <span class="tag">deep dive</span></summary>
+          <div>
+            <ul>
+              <li><strong>rank (r):</strong> capacity of the adapter. 8–16 is plenty for style/format tasks; 32–64 for teaching
+                substantial new behavior. Higher r = more trainable params and memory.</li>
+              <li><strong>alpha (α):</strong> a scaling factor on the update; the effective scale is α/r. A common heuristic is
+                α = 2r. Think of it as a learning-rate-like gain on the adapter.</li>
+              <li><strong>target_modules:</strong> which weight matrices get adapters. Classic LoRA targeted only the attention
+                query/value projections; modern practice often targets all linear layers (q,k,v,o and the MLP) for quality.</li>
+              <li><strong>dropout:</strong> light regularization (0.05–0.1) on the adapter to reduce overfitting on small datasets.</li>
+            </ul>
+          </div>
+        </details>
+
+        <h2 id="qlora">QLoRA: 4-bit base, full-size model on one GPU</h2>
+        <p>
+          LoRA shrinks the <em>trainable</em> memory, but you still have to hold the frozen base model. For a 70B model that's
+          still 140 GB in fp16. <span class="gloss" data-term="qlora">QLoRA</span><a class="cite" data-ref="dettmers2023"></a>
+          closes the gap: <strong>quantize the frozen base to 4-bit</strong> (Plate 13), so it barely uses memory, and train
+          the LoRA adapters in full precision on top. The base is read-only anyway — quantizing it for the forward pass costs
+          little quality.
+        </p>
+        <div class="callout callout--win">
+          <div class="callout__tag">The result that changed the hobbyist world</div>
+          <p>QLoRA made it possible to fine-tune a <strong>65B model on a single 48 GB GPU</strong> — and 7B models on free
+          Colab tiers. Combined with 4-bit NF4 quantization and "double quantization," it collapsed the cost of customizing
+          frontier-scale open models from a datacenter to a single card. Set the calculator above to "LoRA / QLoRA" + "int4"
+          to see it.</p>
+        </div>
+
+        <h2 id="hands-on">Hands-on: fine-tune with PEFT</h2>
+        <p>The Hugging Face <code>peft</code> library makes this a few lines. Start tiny and local to learn the moving parts;
+          move to the cloud recipe for a real 8B QLoRA run.</p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · LoRA fine-tuning</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · Mac/MPS (tiny model)</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA (8B QLoRA)</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install torch transformers peft datasets accelerate
+# Runs on an Apple-Silicon Mac (MPS) or CPU with a deliberately tiny model.
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import LoraConfig, get_peft_model
+
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+base = "HuggingFaceTB/SmolLM2-135M"                 # ~135M params: laptop-friendly
+tok  = AutoTokenizer.from_pretrained(base)
+model = AutoModelForCausalLM.from_pretrained(base, torch_dtype=torch.float16).to(device)
+
+lora = LoraConfig(
+    r=8, lora_alpha=16, lora_dropout=0.05,
+    target_modules=["q_proj", "v_proj"],           # adapt attention query & value
+    task_type="CAUSAL_LM",
+)
+model = get_peft_model(model, lora)
+model.print_trainable_parameters()
+# → trainable params are a tiny fraction of the total. Now run a normal training loop.</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install torch transformers peft bitsandbytes trl datasets accelerate
+# Needs an NVIDIA GPU (Colab T4/A100). Fine-tunes Llama-3 8B in 4-bit with QLoRA.
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from peft import LoraConfig
+from trl import SFTTrainer, SFTConfig
+from datasets import load_dataset
+
+base = "meta-llama/Llama-3.1-8B"
+bnb = BitsAndBytesConfig(                            # 4-bit NF4 quantization of the frozen base
+    load_in_4bit=True, bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
+)
+tok   = AutoTokenizer.from_pretrained(base)
+model = AutoModelForCausalLM.from_pretrained(base, quantization_config=bnb, device_map="auto")
+
+lora = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05,
+                  target_modules=["q_proj","k_proj","v_proj","o_proj"], task_type="CAUSAL_LM")
+
+ds = load_dataset("mlabonne/guanaco-llama2-1k", split="train")
+trainer = SFTTrainer(
+    model=model, train_dataset=ds, peft_config=lora,
+    args=SFTConfig(output_dir="out", per_device_train_batch_size=4,
+                   gradient_accumulation_steps=4, num_train_epochs=1,
+                   learning_rate=2e-4, bf16=True, logging_steps=10),
+)
+trainer.train()
+trainer.save_model("my-lora-adapter")               # saves ONLY the adapter — a few MB</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output (local)</span></div>
+            <pre><code>trainable params: 147,456 || all params: 134,662,080 || trainable%: 0.1095
+# ~0.1% of the model is being trained. That is the entire point of LoRA.</code></pre>
+          </div>
+        </div>
+
+        <h2 id="serving">Using your adapter</h2>
+        <p>After training you have a tiny adapter directory. Two ways to use it:</p>
+        <ul>
+          <li><strong>Load on top of the base</strong> at runtime (<code>PeftModel.from_pretrained(base, "my-lora-adapter")</code>)
+            — keeps the base shared, lets you swap adapters.</li>
+          <li><strong>Merge and export</strong> (<code>model.merge_and_unload()</code>) — folds the patch into the weights for
+            a standalone model with zero adapter overhead, ready to quantize and serve (Plates 13–14).</li>
+        </ul>
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · use the right chat template</div>
+          <p>The #1 cause of disappointing fine-tunes isn't LoRA settings — it's formatting. Your training examples must use
+          the model's exact <span class="gloss" data-term="chat-template">chat template</span> (the special role tokens it was
+          aligned with). Mismatched templates teach the model the wrong structure. More on this in Plate 12.</p>
+        </div>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key papers</div>
+          <div class="ref-card">
+            <span class="yr">2021</span>
+            <div><cite>LoRA: Low-Rank Adaptation of Large Language Models</cite>
+              <span class="auth">Hu, Shen, Wallis, et&nbsp;al. — Microsoft</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">With QLoRA<a class="cite" data-ref="dettmers2023"></a> two years
+              later, this is the backbone of practical open-model fine-tuning.
+              <a href="../references.html#ref-21">See reference&nbsp;[21] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>Full fine-tuning costs ~16 bytes/param of state — prohibitive for large models.</li>
+          <li><strong>PEFT</strong> freezes the model and trains a tiny set of new parameters, eliminating most gradient/optimizer memory.</li>
+          <li><strong>LoRA</strong> learns low-rank <code>B·A</code> "patch" matrices; they merge back into the weights, so inference is unchanged. Think git diff over a pinned dependency.</li>
+          <li><strong>QLoRA</strong> quantizes the frozen base to 4-bit, letting you fine-tune very large models on a single GPU.</li>
+          <li>Tune <strong>rank, alpha, target_modules</strong> — and get the <strong>chat template</strong> right.</li>
+        </ul>
+        <p>LoRA gives a model new skills. The next plate gives it manners: alignment with RLHF and DPO.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "10-peft-lora" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+  <script src="../assets/js/widgets/vram-calculator.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function(){ FGVram.mount("#vram-widget"); });</script>
+</body>
+</html>

@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 11 · Alignment: RLHF &amp; DPO — The Field Guide to LLMs</title>
+  <meta name="description" content="How RLHF turns a text predictor into a helpful assistant: the three-step InstructGPT recipe, reward models from human preferences, PPO with a KL leash, and DPO as the simpler successor.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 11 · Part IV — Adapting Models</div>
+          <h1>Alignment: RLHF &amp; DPO</h1>
+          <p class="standfirst">A base LLM is a world-class text predictor. It is not, by default, a helpful assistant — it is equally happy predicting the next token in a suicide note as in a recipe. Alignment is the process of bending that raw prediction engine into something a human actually wants to talk to. Here's how it works, and why DPO replaced a room full of RL plumbing.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 20 min</span>
+            <span><b>Prereqs</b> · Plate 10</span>
+            <span><b>Code</b> · trl · transformers</span>
+          </div>
+        </div>
+
+        <h2 id="the-problem">The problem: a base model predicts, it doesn't assist</h2>
+        <p>
+          After pretraining, a language model has one objective: predict the next token. Given "The capital of France is",
+          it will produce "Paris" — but it would just as happily complete "The capital of France is… debated among scholars"
+          if that pattern appeared often in its training data. It doesn't have a concept of "the right answer." It has
+          a concept of "what comes next."
+        </p>
+        <p>
+          This creates a mismatch. When a user types "how do I fix this bug?", they want a correct, useful, concise
+          explanation. The raw model might produce a plausible-sounding but wrong explanation, copy-paste an unrelated
+          code block, or start listing alternative framings of the question because that's what Stack Overflow threads
+          look like. The model is predicting human text, not solving the user's problem.
+        </p>
+        <p>
+          <span class="gloss" data-term="alignment">Alignment</span> is the umbrella term for techniques that push the
+          model's behavior toward what humans actually prefer. The dominant paradigm until recently was
+          <span class="gloss" data-term="rlhf">Reinforcement Learning from Human Feedback</span> (RLHF), introduced
+          by Christiano et al.<a class="cite" data-ref="christiano2017"></a> and refined into the now-canonical
+          three-step recipe by the InstructGPT paper<a class="cite" data-ref="ouyang2022"></a>.
+        </p>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key paper</div>
+          <div class="ref-card">
+            <span class="yr">2022</span>
+            <div>
+              <cite>Training language models to follow instructions with human feedback</cite>
+              <span class="auth">Ouyang et al. — OpenAI / NeurIPS 2022</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">The InstructGPT paper. Showed that a 1.3B model fine-tuned with RLHF was preferred by human raters over a raw 175B GPT-3 — alignment matters more than raw scale. The three-step recipe (SFT → reward model → PPO) became the industry blueprint. <a href="../references.html#ref-ouyang2022">See reference →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <h2 id="step1-sft">Step 1: supervised fine-tuning</h2>
+        <p>
+          The alignment pipeline starts exactly where Plate 09 left off: <span class="gloss" data-term="sft">supervised
+          fine-tuning</span> on demonstration data. Human labelers are given a prompt and asked to write the ideal
+          response themselves. These (prompt, ideal response) pairs form an SFT dataset.
+        </p>
+        <p>
+          The SFT step does two things at once. First, it teaches the model the format and style of a helpful assistant —
+          concise, on-topic, structured where helpful. Second, it shifts the model's output distribution toward the space
+          of "helpful responses" so that the RL stage in step 3 doesn't have to explore blindly from a totally unconstrained
+          distribution. SFT gives RL a warm start.
+        </p>
+        <p>
+          In InstructGPT, the SFT dataset was about 13,000 examples from human contractors. That's surprisingly small
+          for a 175B model — yet it was enough to dramatically shift the model's behavior. Quality of demonstrations
+          matters far more than quantity here.
+        </p>
+
+        <h2 id="step2-reward-model">Step 2: a reward model from human preferences</h2>
+        <p>
+          Here's the core challenge: we want the model to produce outputs humans prefer, but we can't compute a
+          differentiable "human preference" loss directly. So we <em>learn</em> a proxy: a
+          <span class="gloss" data-term="reward-model">reward model</span> (RM).
+        </p>
+        <p>
+          The reward model is trained on comparison data. Human raters are shown a prompt and two candidate responses
+          (usually sampled from the SFT model) and asked "which is better?" The reward model — itself a language model
+          with a scalar head — is trained to assign a higher score to the preferred response and a lower score to the
+          rejected one. This is a classification task in disguise: given a pair <code>(chosen, rejected)</code>, maximize
+          the margin between their scores.
+        </p>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · a learned code-review bot</div>
+          <p>The reward model is like a code-review bot trained on thousands of pull request reviews. You don't give it a rubric — you show it thousands of (PR, human rating) pairs and let it internalize the patterns. Once trained, it can score a new PR without a human in the loop. The policy model is then trained to write code that passes this bot's review. The bot isn't perfect, but it's a useful approximation of human judgment that can be evaluated at model training speed.</p>
+        </div>
+
+        <p>
+          The reward model is the pivot of the whole pipeline. Its quality determines the quality of alignment. If the RM
+          learns to reward verbosity (because human raters equated "longer" with "more thorough"), the policy will
+          produce verbose outputs. This is called reward hacking: the model learns to game the learned proxy rather than
+          actually improving on the underlying human preference.
+        </p>
+
+        <h2 id="step3-ppo">Step 3: reinforcement learning with PPO</h2>
+        <p>
+          With the SFT model and the reward model in hand, the third step uses reinforcement learning to update the
+          policy (the language model) to maximize the reward model's scores.
+        </p>
+        <p>
+          The algorithm used in InstructGPT is <span class="gloss" data-term="ppo">Proximal Policy Optimization</span>
+          (PPO)<a class="cite" data-ref="schulman2017"></a>, a policy gradient RL algorithm. The training loop looks like
+          this: (1) sample a prompt from the dataset; (2) run the current policy to generate a response; (3) score the
+          response with the frozen reward model; (4) use that score as the reward signal to update the policy via
+          PPO<a class="cite" data-ref="williams1992"></a>.
+        </p>
+        <p>
+          There is one critical addition: a <strong>KL penalty</strong>. Without it, the policy can drift arbitrarily far
+          from the SFT model in search of higher reward scores — and once it drifts far enough, it often discovers
+          degenerate solutions like repeating "I'm happy to help!" in a loop (high reward model score, no actual
+          helpfulness). The KL penalty adds a term to the loss that penalizes the policy for producing outputs whose
+          probability under the SFT model is very different from their probability under the current policy:
+        </p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>pseudocode · PPO objective</span></div>
+          <pre><code class="language-python"># Total reward used by PPO at each step:
+reward = reward_model(prompt, response) - beta * KL(policy || sft_model)
+# beta (typically 0.02–0.1) controls the "leash" length.
+# A large beta → policy stays close to SFT model → safer but less aligned.
+# A small beta → policy drifts farther → higher reward, more risk of hacking.</code></pre>
+        </div>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · RL on a KL leash</div>
+          <p>PPO training is like letting a dog explore a park on a leash tied to where it started (the SFT model). The dog can roam freely and sniff out high-reward spots, but the leash (KL penalty) prevents it from running so far that it loses sight of home. Without the leash, the dog (policy) will sprint toward a corner of the park that looks amazing to the reward model but is actually a garbage heap — reward hacking.</p>
+        </div>
+
+        <p>
+          PPO with a KL penalty works, but it is operationally painful. You need to run <em>four</em> models simultaneously
+          during training: the active policy, a frozen reference policy (the SFT model, for KL computation), the reward
+          model, and a value model (a critic that estimates expected future reward). On a 7B model, this requires a
+          significant multi-GPU setup just to keep everything in memory. The engineering complexity alone has driven
+          many teams to look for simpler alternatives.
+        </p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 560 240" role="img" aria-label="RLHF three-step pipeline diagram">
+            <defs>
+              <marker id="arr11" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="var(--text-2)"/>
+              </marker>
+            </defs>
+            <!-- Step 1 -->
+            <rect x="10" y="60" width="140" height="120" rx="8" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="80" y="84" text-anchor="middle" font-weight="700" font-size="12" fill="var(--text-1)">Step 1: SFT</text>
+            <text x="80" y="104" text-anchor="middle" font-size="10" fill="var(--text-2)">Human</text>
+            <text x="80" y="118" text-anchor="middle" font-size="10" fill="var(--text-2)">demonstrations</text>
+            <text x="80" y="140" text-anchor="middle" font-size="10" fill="var(--accent)">→ SFT Model</text>
+            <text x="80" y="158" text-anchor="middle" font-size="9" fill="var(--text-3)">~13k examples</text>
+
+            <!-- Arrow 1→2 -->
+            <line x1="150" y1="120" x2="190" y2="120" stroke="var(--text-2)" stroke-width="1.5" marker-end="url(#arr11)"/>
+
+            <!-- Step 2 -->
+            <rect x="190" y="60" width="160" height="120" rx="8" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="270" y="84" text-anchor="middle" font-weight="700" font-size="12" fill="var(--text-1)">Step 2: Reward Model</text>
+            <text x="270" y="104" text-anchor="middle" font-size="10" fill="var(--text-2)">Human comparisons</text>
+            <text x="270" y="118" text-anchor="middle" font-size="10" fill="var(--text-2)">(chosen vs rejected)</text>
+            <text x="270" y="140" text-anchor="middle" font-size="10" fill="var(--accent)">→ RM (scalar scorer)</text>
+            <text x="270" y="158" text-anchor="middle" font-size="9" fill="var(--text-3)">~33k comparisons</text>
+
+            <!-- Arrow 2→3 -->
+            <line x1="350" y1="120" x2="390" y2="120" stroke="var(--text-2)" stroke-width="1.5" marker-end="url(#arr11)"/>
+
+            <!-- Step 3 -->
+            <rect x="390" y="60" width="160" height="120" rx="8" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="470" y="84" text-anchor="middle" font-weight="700" font-size="12" fill="var(--text-1)">Step 3: PPO</text>
+            <text x="470" y="104" text-anchor="middle" font-size="10" fill="var(--text-2)">Policy updates via RL</text>
+            <text x="470" y="118" text-anchor="middle" font-size="10" fill="var(--text-2)">reward − β·KL</text>
+            <text x="470" y="140" text-anchor="middle" font-size="10" fill="var(--accent)">→ Aligned Model</text>
+            <text x="470" y="158" text-anchor="middle" font-size="9" fill="var(--text-3)">4 models in memory</text>
+
+            <!-- Labels -->
+            <text x="80" y="32" text-anchor="middle" font-size="11" fill="var(--text-3)">Demonstration data</text>
+            <line x1="80" y1="38" x2="80" y2="58" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arr11)"/>
+            <text x="270" y="32" text-anchor="middle" font-size="11" fill="var(--text-3)">Preference data</text>
+            <line x1="270" y1="38" x2="270" y2="58" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arr11)"/>
+            <text x="470" y="32" text-anchor="middle" font-size="11" fill="var(--text-3)">RM scores + KL</text>
+            <line x1="470" y1="38" x2="470" y2="58" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arr11)"/>
+
+            <!-- Bottom label -->
+            <text x="280" y="220" text-anchor="middle" font-size="11" fill="var(--text-3)">The InstructGPT / RLHF pipeline</text>
+          </svg>
+          <figcaption><b>The three-step RLHF pipeline.</b> Step 1 (SFT) shapes the model's format; Step 2 learns human preferences as a scalar; Step 3 uses RL to maximize that scalar while a KL penalty keeps the policy anchored near the SFT model. The full pipeline requires running four models simultaneously during Step 3.</figcaption>
+        </figure>
+
+        <h2 id="dpo">DPO: alignment without the RL loop</h2>
+        <p>
+          In 2023, Rafailov et al. published <span class="gloss" data-term="dpo">Direct Preference Optimization</span>
+          (DPO)<a class="cite" data-ref="rafailov2023"></a>, and the alignment community collectively exhaled.
+        </p>
+        <p>
+          The key insight: the RLHF objective — maximize reward subject to a KL constraint — has an analytical solution.
+          You can rearrange the math and show that the optimal policy under RLHF can be expressed directly in terms of
+          a log-ratio between the policy and the reference model. This means you can train on preference pairs
+          <code>(prompt, chosen, rejected)</code> with a single classification-style loss — no reward model, no RL loop,
+          no four-model memory overhead.
+        </p>
+        <p>The DPO loss looks like this in practice:</p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>pseudocode · DPO loss</span></div>
+          <pre><code class="language-python"># DPO loss (simplified):
+# For each (prompt, chosen, rejected) triple:
+#   log_ratio_chosen  = log π_θ(chosen|prompt) - log π_ref(chosen|prompt)
+#   log_ratio_rejected = log π_θ(rejected|prompt) - log π_ref(rejected|prompt)
+#   loss = -log σ(β * (log_ratio_chosen - log_ratio_rejected))
+#
+# β is the same temperature as the KL coefficient in RLHF.
+# σ is the logistic (sigmoid) function.
+# Minimizing this loss → the policy assigns more probability to chosen
+# relative to the reference, and less to rejected — exactly what RLHF wanted.</code></pre>
+        </div>
+
+        <div class="callout callout--win">
+          <div class="callout__tag">Why DPO won</div>
+          <p>DPO achieves the same goal as RLHF PPO in a single supervised-learning pass on preference data. No reward model to train and maintain. No PPO training loop with four models in memory. No reward hacking because there is no reward model to hack. Training is as stable as SFT. In practice, DPO models perform on par with or slightly better than PPO-trained models on most benchmarks, at a fraction of the engineering complexity. Almost all open-model fine-tuning pipelines have adopted DPO for the preference stage.</p>
+        </div>
+
+        <h3>Running DPO with trl</h3>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · DPO training with trl</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · CPU/MPS (small model)</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA (Mistral-7B)</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install trl transformers datasets accelerate
+from datasets import Dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from trl import DPOTrainer, DPOConfig
+
+# --- 1. A tiny preference dataset ---
+# Each example: prompt + a chosen response + a rejected response.
+data = [
+    {
+        "prompt": "What is 2 + 2?",
+        "chosen": "4.",
+        "rejected": "It depends on the context — in some modular arithmetic systems, 2 + 2 = 0.",
+    },
+    {
+        "prompt": "Write a Python hello world.",
+        "chosen": 'print("Hello, world!")',
+        "rejected": "To write a hello world program you would typically start by opening your text editor...",
+    },
+    {
+        "prompt": "Explain what a REST API is.",
+        "chosen": "A REST API is a web interface where clients use HTTP verbs (GET, POST, PUT, DELETE) to manipulate resources identified by URLs.",
+        "rejected": "REST stands for Representational State Transfer. It was defined by Roy Fielding in his dissertation...",
+    },
+]
+dataset = Dataset.from_list(data)
+
+# --- 2. Load model (tiny, runs on CPU/MPS) ---
+model_id = "gpt2"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+tokenizer.pad_token = tokenizer.eos_token
+model = AutoModelForCausalLM.from_pretrained(model_id)
+
+# --- 3. DPO config ---
+config = DPOConfig(
+    output_dir="./dpo-gpt2",
+    num_train_epochs=2,
+    per_device_train_batch_size=1,
+    learning_rate=1e-5,
+    beta=0.1,           # KL temperature — controls how far policy can drift
+    logging_steps=5,
+    max_length=256,
+    max_prompt_length=128,
+)
+
+trainer = DPOTrainer(
+    model=model,
+    ref_model=None,   # trl creates a frozen copy automatically
+    args=config,
+    train_dataset=dataset,
+    processing_class=tokenizer,
+)
+
+# --- 4. Train ---
+trainer.train()
+print("DPO training complete.")</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install trl transformers datasets accelerate bitsandbytes peft
+# Assumes the model has already been SFT'd (Plate 09 step)
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model
+from trl import DPOTrainer, DPOConfig
+import torch
+
+# --- 1. Load a preference dataset (HH-RLHF format) ---
+dataset = load_dataset("Anthropic/hh-rlhf", split="train[:5000]")
+# Expected columns: "chosen", "rejected" (full conversation strings)
+# trl's DPOTrainer can use these directly or you can reformat to
+# {"prompt", "chosen", "rejected"} with the 'process_row' approach.
+
+# --- 2. Load SFT-fine-tuned model in 4-bit ---
+model_id = "mistralai/Mistral-7B-Instruct-v0.3"  # replace with your SFT checkpoint
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.bfloat16,
+)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    quantization_config=bnb_config,
+    device_map="auto",
+)
+
+# --- 3. LoRA for DPO ---
+peft_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "v_proj"],
+    bias="none",
+    task_type="CAUSAL_LM",
+)
+
+# --- 4. DPO config ---
+config = DPOConfig(
+    output_dir="./dpo-mistral-7b",
+    num_train_epochs=1,
+    per_device_train_batch_size=2,
+    gradient_accumulation_steps=8,
+    learning_rate=5e-7,
+    beta=0.1,
+    bf16=True,
+    logging_steps=25,
+    max_length=1024,
+    max_prompt_length=512,
+)
+
+trainer = DPOTrainer(
+    model=model,
+    ref_model=None,    # ref model auto-created from base; with QLoRA this uses adapters
+    args=config,
+    train_dataset=dataset,
+    peft_config=peft_config,
+    processing_class=tokenizer,
+)
+
+trainer.train()
+trainer.save_model("./dpo-mistral-7b")</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>{'loss': 0.693, 'rewards/chosen': 0.02, 'rewards/rejected': -0.01, 'epoch': 0.5}
+# loss starts at log(2) ≈ 0.693 (random — policy and ref agree on everything)
+# rewards/chosen rises, rewards/rejected falls → policy differentiating preferences
+{'loss': 0.521, 'rewards/chosen': 0.31, 'rewards/rejected': -0.28, 'epoch': 1.0}
+{'loss': 0.448, 'rewards/chosen': 0.57, 'rewards/rejected': -0.53, 'epoch': 2.0}
+DPO training complete.
+# Check: rewards/chosen - rewards/rejected is the "reward margin"; watch it widen</code></pre>
+          </div>
+        </div>
+
+        <h2 id="rlaif">RLAIF and Constitutional AI</h2>
+        <p>
+          A practical bottleneck in RLHF is labeler cost. Writing demonstrations and comparing response pairs at scale
+          requires thousands of human-hours. <span class="gloss" data-term="rlaif">RLAIF</span> (Reinforcement Learning
+          from AI Feedback)<a class="cite" data-ref="bai2022"></a> replaces the human labelers with an AI — typically a
+          stronger model — to generate the preference annotations.
+        </p>
+        <p>
+          Anthropic's Constitutional AI (CAI) extends this idea further. Instead of asking annotators to judge responses
+          ad hoc, you write a set of explicit principles — a "constitution" (e.g., "prefer responses that are helpful,
+          harmless, and honest") — and have the AI critique and revise its own outputs against those principles. The
+          critiques become the preference data. The AI is essentially doing its own alignment via a written rulebook
+          rather than a trained-from-scratch reward model.
+        </p>
+        <p>
+          RLAIF and CAI open the door to scaling alignment without scaling the human annotation budget proportionally.
+          The tradeoff: the AI's judgments inherit its existing biases, so you need to be careful that the "judge" model
+          isn't just amplifying what it already believes rather than actually reflecting diverse human preferences.
+        </p>
+
+        <h2 id="alignment-tax">The alignment tax</h2>
+        <p>
+          Alignment is not free. Training a model to refuse harmful requests, stay on-topic, and produce calibrated
+          answers tends to reduce its raw capability on some benchmarks — particularly on tasks that require the model to
+          "go off the rails" in a useful way (creative writing, adversarial reasoning, edge-case code generation).
+        </p>
+        <p>
+          This cost is called the <strong>alignment tax</strong>. It manifests in a few ways:
+        </p>
+        <ul>
+          <li><strong>Sycophancy.</strong> RLHF-trained models learn that agreeing with the user gets higher human ratings, even when the user is wrong. The model starts validating incorrect premises rather than correcting them.</li>
+          <li><strong>Hedging over directness.</strong> Safety training pushes models toward qualifications and disclaimers, which can make answers less useful in technical contexts where precision matters.</li>
+          <li><strong>Capability regression on harmful-adjacent tasks.</strong> A model trained to refuse requests for "how to pick a lock" may also start refusing requests about locksmith certification courses.</li>
+          <li><strong>Reduced <span class="gloss" data-term="hallucination">hallucination</span> calibration.</strong> Paradoxically, alignment training can sometimes increase confident-sounding hallucinations if the reward model was itself trained on data where confident answers got higher ratings.</li>
+        </ul>
+        <p>
+          There is no universal solution. The best-performing production models (e.g., GPT-4, Claude 3) invest enormous
+          effort in balancing alignment with capability — iterating reward models, preference datasets, and Constitutional
+          AI principles in tight loops. For practitioners fine-tuning open models, the practical advice is: if you fine-tune
+          an already-aligned model (Llama-Instruct, Mistral-Instruct), minimize your epochs and check that alignment
+          behaviors haven't degraded on a held-out safety test set.
+        </p>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>A base model predicts text; alignment trains it to follow instructions and produce outputs humans prefer.</li>
+          <li>The <strong>RLHF three-step pipeline</strong> (InstructGPT): SFT on demonstrations → train a reward model on human comparisons → fine-tune with PPO, penalizing KL divergence from the SFT model to prevent reward hacking.</li>
+          <li>The <strong>reward model</strong> is a language model with a scalar head, trained to rank chosen responses above rejected ones. Its quality determines the alignment quality — garbage RM → garbage alignment.</li>
+          <li><strong>PPO</strong> requires four models in memory simultaneously (policy, frozen SFT reference, reward model, value/critic). It works but is operationally complex.</li>
+          <li><strong>DPO</strong> reformulates the RLHF objective as a direct classification loss over preference pairs — no reward model, no RL loop, equivalent performance, far simpler. Now the standard approach for open-model alignment.</li>
+          <li><strong>RLAIF / Constitutional AI</strong> scale alignment feedback with AI-generated preferences, reducing dependence on expensive human annotation.</li>
+          <li>The <strong>alignment tax</strong> is real: sycophancy, hedging, and capability regressions are known failure modes to watch for and test against.</li>
+        </ul>
+        <p>
+          With alignment covered, <a href="12-data-for-finetuning.html">Plate&nbsp;12</a> zooms in on the fuel that
+          powers all of these training stages: data. Format choices, chat templates, pydantic validation, synthetic
+          generation, and deduplication — the unglamorous work that actually determines whether a fine-tune succeeds.
+        </p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "11-alignment" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

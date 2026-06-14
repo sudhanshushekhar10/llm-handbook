@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 16 · Evaluating Models — The Field Guide to LLMs</title>
+  <meta name="description" content="Why evaluation is the genuinely hard part: academic benchmarks, perplexity, LLM-as-a-judge, benchmark contamination, and how to build task-specific evals you can actually trust.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 16 · Part VI — Using &amp; Contributing</div>
+          <h1>Evaluating Models</h1>
+          <p class="standfirst">Building a model is mostly engineering. Knowing whether it actually works — for <em>your</em> task, in <em>your</em> environment — is the genuinely hard part. Benchmarks lie, perplexity misleads, and if you aren't careful you'll optimize a metric until it stops meaning anything.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 18 min</span>
+            <span><b>Prereqs</b> · Plate 06</span>
+            <span><b>Code</b> · lm-evaluation-harness · openai</span>
+          </div>
+        </div>
+
+        <h2 id="why-hard">Why evaluation is the hard part</h2>
+        <p>
+          In most software you know when something is broken. The function returns the wrong value; the test fails red.
+          With language models, the output is text — and text admits infinite variation. "Paris" and "Paris, France" are
+          both correct answers to "What is the capital of France?" but one contains more words. "Write a helpful summary"
+          produces a space of valid outputs so large that no enumeration could cover it. You can't write a unit test for fluency.
+        </p>
+        <p>
+          The field's answer has been to proxy: measure something correlated with quality that <em>is</em> computable.
+          <span class="gloss" data-term="perplexity">Perplexity</span> on held-out text. Multiple-choice accuracy on a
+          knowledge benchmark. Pass rate on a coding test suite. Each proxy captures something real, and each has failure
+          modes that let bad models game it — sometimes accidentally, sometimes by design. Understanding the proxy's
+          limits is the whole skill.
+        </p>
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV · evals are your test suite</div>
+          <p>Think of an eval suite as CI for a model. Before you ship a fine-tune, a <span class="gloss" data-term="rag">RAG</span>
+          update, or a prompt change, you want a regression harness that tells you "this didn't get worse on the
+          things we care about." If you have no eval, you have no confidence — you're merging to main without tests.
+          The benchmark ecosystem provides off-the-shelf suites; your job is to add the task-specific ones only you can write.</p>
+        </div>
+
+        <h2 id="benchmarks">Academic benchmarks: MMLU, GSM8K, HumanEval and friends</h2>
+        <p>
+          A handful of benchmarks became the de-facto lingua franca for comparing models. Understanding what each
+          actually measures — and what it doesn't — saves you from being misled by a leaderboard.
+        </p>
+
+        <div class="tablewrap"><table>
+          <thead><tr>
+            <th>Benchmark</th>
+            <th>What it tests</th>
+            <th>Format</th>
+            <th>Watch out for</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>MMLU</strong><a class="cite" data-ref="hendrycks2021"></a></td>
+              <td>World knowledge across 57 subjects (law, medicine, history…)</td>
+              <td>4-choice multiple choice</td>
+              <td>Saturating near 90%; contamination risk</td>
+            </tr>
+            <tr>
+              <td><strong>HellaSwag</strong></td>
+              <td>Commonsense reasoning about everyday events</td>
+              <td>Multiple choice, adversarial</td>
+              <td>Near-solved by big models; ceiling effect</td>
+            </tr>
+            <tr>
+              <td><strong>GSM8K</strong></td>
+              <td>Grade-school math word problems requiring multi-step reasoning</td>
+              <td>Free-form, exact numeric answer</td>
+              <td>Contamination; strong <span class="gloss" data-term="zero-shot">zero-shot</span> variance</td>
+            </tr>
+            <tr>
+              <td><strong>HumanEval</strong><a class="cite" data-ref="chen2021"></a></td>
+              <td>Python function completion, measured by unit-test pass rate</td>
+              <td>Code generation, pass@k</td>
+              <td>Only 164 problems; docstrings may overlap with training</td>
+            </tr>
+            <tr>
+              <td><strong>MT-Bench</strong><a class="cite" data-ref="zheng2023"></a></td>
+              <td>Multi-turn chat quality across 8 categories</td>
+              <td>LLM-graded, 1–10 scale</td>
+              <td>Judge model bias; correlates with Chatbot Arena</td>
+            </tr>
+          </tbody>
+        </table></div>
+
+        <p>
+          MMLU<a class="cite" data-ref="hendrycks2021"></a> arrived in 2021 and immediately became the default "how smart
+          is the model" number. It's 57 subjects, each with multiple-choice questions drawn from practice exams and textbooks.
+          It's genuinely broad, and early models that scored 70%+ felt impressively knowledgeable. The problem: as models
+          scaled up and as MMLU scores climbed past 85%, it started telling us less and less. Headroom collapsed.
+        </p>
+        <p>
+          <strong>HumanEval</strong><a class="cite" data-ref="chen2021"></a> introduced <strong>pass@k</strong>: generate
+          <em>k</em> candidate completions, run the unit tests on all of them, and declare success if at least one passes.
+          This corrects for stochasticity — a model that occasionally gets the right answer but usually doesn't should score
+          lower than one that's reliably correct. It's a clean, objective signal for code tasks.
+        </p>
+
+        <details class="deep">
+          <summary>▸ How pass@k is computed <span class="tag">deep dive</span></summary>
+          <div>
+            <p>If you generate <code>n</code> samples total and <code>c</code> of them pass, the unbiased estimator of
+            pass@k is:</p>
+            <p style="font-family:var(--font-mono);text-align:center;font-size:1rem;color:var(--accent-deep)">
+              pass@k = 1 − C(n−c, k) / C(n, k)
+            </p>
+            <p>where C(a,b) is the binomial coefficient. This is more statistically efficient than sampling exactly k
+            times per problem — you run n ≥ k samples once and compute the estimator analytically. Chen et al.
+            used n=200 and report pass@1, pass@10, pass@100.</p>
+          </div>
+        </details>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key paper</div>
+          <div class="ref-card"><span class="yr">2021</span>
+            <div><cite>Measuring Massive Multitask Language Understanding</cite>
+              <span class="auth">Hendrycks, Burns, Basart et al. — UC Berkeley / MIRI</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">The benchmark that replaced narrow domain tests with a broad
+              57-subject sweep, becoming the standard "how knowledgeable is this model?" number — and, eventually,
+              an object lesson in Goodhart's Law. <a href="../references.html#ref-25">See reference [25] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <h2 id="perplexity">Perplexity and its limits</h2>
+        <p>
+          Before there were benchmarks, there was <span class="gloss" data-term="perplexity">perplexity</span>.
+          It's defined as the exponentiated average negative log-likelihood the model assigns to held-out text — essentially,
+          "how surprised was the model by the test corpus?" Lower is better: a model that assigns high probability to what
+          actually happened is less perplexed.
+        </p>
+        <p>
+          Perplexity is elegant. It doesn't require labeled examples or a judge. You just run the model over text it
+          hasn't seen and measure the <span class="gloss" data-term="loss">loss</span>. It's fast, it's reproducible,
+          and it tracks improvements in language modelling faithfully. For pretraining runs, it's the primary signal.
+        </p>
+        <p>
+          Its limits emerge the moment you ask "but is the model useful?" A model can have excellent perplexity on
+          Wikipedia and still:
+        </p>
+        <ul>
+          <li>Refuse every question it dislikes (aligned to unhelpfulness).</li>
+          <li>Hallucinate confidently — low <span class="gloss" data-term="hallucination">hallucination</span> is not what perplexity measures.</li>
+          <li>Follow instructions poorly — it's great at completing sentences, terrible at completing tasks.</li>
+          <li>Score worse on code perplexity while being better at coding (distribution mismatch).</li>
+        </ul>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · compression ratio vs. correctness</div>
+          <p>Perplexity measures how well the model compresses text — like a zip ratio. A model that compresses English
+          prose efficiently does so because it learned the statistics of English prose. But a good compression ratio on
+          the wrong corpus (say, dense legal text) tells you nothing about whether the model will be useful to your
+          end users. Perplexity is a proxy for fluency, not for usefulness.</p>
+        </div>
+
+        <h2 id="llm-as-judge">LLM-as-a-judge and Chatbot Arena</h2>
+        <p>
+          If the problem is that text quality can't be reduced to a scalar, the obvious move is to have something that
+          can understand text evaluate it. Enter <strong>LLM-as-a-judge</strong><a class="cite" data-ref="zheng2023"></a>:
+          use a strong model (GPT-4, Claude, Gemini) to grade another model's outputs on a 1–10 scale or in a head-to-head
+          preference comparison.
+        </p>
+        <p>
+          MT-Bench asked GPT-4 to score multi-turn conversations across eight categories (coding, math, writing, roleplay…).
+          The resulting scores correlated well with human preferences — suggesting that a strong judge model captures much
+          of what humans care about without the cost and slowness of human annotation. This is now standard practice for
+          evaluating chat and instruction-following quality.
+        </p>
+        <p>
+          <strong>Chatbot Arena</strong> (LMSYS) takes a different angle: real users submit a question, get responses
+          from two anonymous models, pick the winner. The winner's Elo rating goes up. Over millions of votes, this
+          produces a ranking that is grounded in real user preference rather than any single judge's biases. It's the
+          closest the field has to a ground truth for "which model is better to use."
+        </p>
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · judge bias and self-preference</div>
+          <p>LLM judges have systematic biases: they prefer longer outputs, more structured responses, and — in
+          controlled studies — their own outputs. "GPT-4 rates GPT-4 highly" is a real phenomenon. To mitigate this:
+          swap the order of responses (position bias is real), use multiple judge models, and calibrate against human
+          labels on a random subset.</p>
+        </div>
+
+        <h2 id="contamination">Contamination: the benchmark you trained on</h2>
+        <p>
+          Here's the quiet problem eating the whole field: once a benchmark is published and its questions are on the
+          internet, future training runs will ingest them. A model that has seen "the answer to question 47 of MMLU
+          Jurisprudence is C" during pretraining didn't <em>learn</em> law — it memorized an exam.
+        </p>
+        <p>
+          This is called <strong>benchmark contamination</strong> or <strong>data leakage</strong>, and the community
+          has coined the term <em>benchmaxxing</em> for the practice — intentional or not — of training on or near
+          benchmark data to inflate scores. Scores plateau, papers report state-of-the-art, and nothing improves in
+          practice. It's teaching to the test at industrial scale.
+        </p>
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · benchmaxxing</div>
+          <p>A model that scores 88% on MMLU might have seen MMLU questions during pretraining. Models trained on
+          carefully curated, non-overlapping data often score lower on public benchmarks but <em>better</em> on held-out
+          private evals. When a model's benchmark number seems suspiciously high, look for contamination analysis in
+          the technical report. If there isn't one, assume the number is optimistic. Trust private, held-out evals
+          over public leaderboard positions for anything that matters.</p>
+        </div>
+        <p>
+          The practical response is to use benchmarks as rough filters — enough to tell a 60% model from an 85% model
+          — but to invest seriously in <strong>private, held-out evals</strong> that were never published. If the
+          questions never hit the internet, they can't leak into the training corpus. This is why leading labs maintain
+          eval sets that are never released publicly.
+        </p>
+        <p>
+          <span class="gloss" data-term="alignment">Alignment</span> evaluations suffer the same problem: if the
+          alignment dataset leaks, the model learns to say the aligned-sounding answer rather than actually being aligned.
+          Chain-of-thought prompting<a class="cite" data-ref="wei2022"></a> benchmarks are particularly susceptible —
+          a few-shot example of the reasoning style will often appear verbatim in training corpora.
+        </p>
+
+        <h2 id="building-evals">Building evals you can trust</h2>
+        <p>
+          The practical upshot of all the above: you need to write your own evals. No public benchmark tests whether
+          your customer-support model handles the specific product SKUs your users ask about. No leaderboard tells you
+          whether the <span class="gloss" data-term="sft">SFT</span>-trained variant is better at your JSON extraction task than the base model.
+        </p>
+        <p>
+          Good custom eval design borrows from test engineering:
+        </p>
+        <ul>
+          <li><strong>Golden dataset:</strong> a hand-curated set of (input, expected-output) pairs that cover your real traffic. 50–200 examples beats 10,000 synthetic ones.</li>
+          <li><strong>Exact-match and F1</strong> where the answer space is small (classification, extraction, named entities).</li>
+          <li><strong>Pass@k or execution-based</strong> for code — run the generated code; don't read it.</li>
+          <li><strong>LLM-as-judge</strong> for open-ended tasks: write a rubric, test it on cases where you know the answer, then automate it.</li>
+          <li><strong>Regression suite:</strong> run the full eval before and after any model change. Flag any metric that dropped by more than 2 percentage points.</li>
+        </ul>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · Goodhart's Law</div>
+          <p>"When a measure becomes a target, it ceases to be a good measure." This is Goodhart's Law, and it
+          applies to LLM evaluation with brutal clarity. Once a benchmark is the thing being optimized, the benchmark
+          stops measuring what it was supposed to measure. The only defense is to keep rotating your metrics and to
+          maintain held-out, never-public test sets. Think of it as the eval equivalent of not letting developers
+          write their own tests — and then grade their own work.</p>
+        </div>
+
+        <p>
+          The EleutherAI <strong>lm-evaluation-harness</strong> is the open-source standard for running academic
+          benchmarks in a reproducible way. It implements MMLU, HellaSwag, GSM8K, HumanEval, and dozens of others,
+          and it's the harness used by most open-model leaderboards (Open LLM Leaderboard on Hugging Face). Worth
+          knowing even if you mostly write custom evals — it's the reference implementation.
+        </p>
+
+        <!-- Code: (a) custom eval with pass@k / exact-match -->
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · custom eval with exact-match &amp; pass@k</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · Mac/MPS</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install transformers torch
+# Exact-match eval + pass@k for a tiny code-gen model.
+import torch, math
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from itertools import combinations
+
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+model_id = "HuggingFaceTB/SmolLM2-360M-Instruct"
+tok   = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float16).to(device)
+
+# ── Exact-match QA ──────────────────────────────────────────────────────────
+qa_dataset = [
+    {"q": "What is 7 * 8?",           "a": "56"},
+    {"q": "Capital of France?",        "a": "Paris"},
+    {"q": "sqrt(144) =",               "a": "12"},
+]
+
+def generate(prompt, max_new=32):
+    ids = tok(prompt, return_tensors="pt").input_ids.to(device)
+    with torch.inference_mode():
+        out = model.generate(ids, max_new_tokens=max_new, do_sample=False)
+    return tok.decode(out[0][ids.shape[-1]:], skip_special_tokens=True).strip()
+
+correct = sum(
+    generate(f"Answer with just the answer:\n{ex['q']}\nAnswer:").startswith(ex["a"])
+    for ex in qa_dataset
+)
+print(f"Exact-match: {correct}/{len(qa_dataset)} = {correct/len(qa_dataset):.0%}")
+
+# ── pass@k (unbiased estimator) ──────────────────────────────────────────────
+def pass_at_k(n: int, c: int, k: int) -> float:
+    """Unbiased estimator from Chen et al. 2021."""
+    if n - c < k:
+        return 1.0
+    return 1.0 - math.comb(n - c, k) / math.comb(n, k)
+
+# Simulate: n=5 samples, c=3 passed unit tests
+n, c, k = 5, 3, 1
+print(f"pass@{k} (n={n}, c={c}): {pass_at_k(n, c, k):.2%}")</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install lm-eval
+# Run the lm-evaluation-harness against a model on GSM8K and HellaSwag.
+# Works on any CUDA GPU; swap model_id for a bigger model as available.
+
+# bash equivalent (run from terminal):
+#   lm_eval --model hf \
+#           --model_args pretrained=meta-llama/Llama-3.2-1B-Instruct \
+#           --tasks gsm8k,hellaswag \
+#           --num_fewshot 5 \
+#           --device cuda:0 \
+#           --output_path ./results
+
+# Or via Python API:
+import lm_eval
+
+results = lm_eval.simple_evaluate(
+    model="hf",
+    model_args="pretrained=meta-llama/Llama-3.2-1B-Instruct",
+    tasks=["gsm8k", "hellaswag"],
+    num_fewshot=5,
+    device="cuda:0",
+)
+for task, metrics in results["results"].items():
+    print(f"{task}: {metrics}")</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output (local)</span></div>
+            <pre><code>Exact-match: 2/3 = 67%
+pass@1 (n=5, c=3): 60.00%   # P(at least 1 of k=1 random draws passes) given 3/5 samples passed</code></pre>
+          </div>
+        </div>
+
+        <!-- Code: (b) LLM-as-judge prompt example -->
+        <p>For open-ended tasks where exact-match doesn't apply, wire up a judge model with a structured rubric:</p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · LLM-as-judge prompt</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="single"><pre><code class="language-python"># pip install openai
+# LLM-as-judge: ask a strong model to score a response on a rubric.
+import openai, json
+
+client = openai.OpenAI()  # uses OPENAI_API_KEY env var
+
+JUDGE_SYSTEM = """You are an expert evaluator. Given a user question and a model response,
+rate the response on three axes, each 1-5:
+  - Accuracy: Is the information factually correct?
+  - Helpfulness: Does it directly address what the user needed?
+  - Conciseness: Is it appropriately brief without losing important detail?
+
+Return ONLY a JSON object: {"accuracy": N, "helpfulness": N, "conciseness": N, "rationale": "..."}"""
+
+def judge(question: str, response: str) -> dict:
+    msg = f"Question: {question}\n\nModel response: {response}"
+    result = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": JUDGE_SYSTEM},
+            {"role": "user",   "content": msg},
+        ],
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    return json.loads(result.choices[0].message.content)
+
+scores = judge(
+    question="Explain what a LoRA adapter is in one sentence.",
+    response="LoRA adds small trainable matrices to a frozen model so you fine-tune 0.1% of parameters.",
+)
+print(scores)</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>{"accuracy": 5, "helpfulness": 5, "conciseness": 5,
+ "rationale": "Precisely correct, directly addresses the question, appropriately terse."}</code></pre>
+          </div>
+        </div>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li><strong>Evaluation is the hard part</strong> — text outputs don't have a natural ground truth, so the field uses proxies, each with failure modes.</li>
+          <li><strong>MMLU</strong> tests broad knowledge (57 subjects, multiple choice); <strong>GSM8K</strong> tests multi-step math; <strong>HumanEval</strong> tests code via unit-test pass rate (pass@k); <strong>MT-Bench &amp; Chatbot Arena</strong> measure chat quality via preference.</li>
+          <li><strong>Perplexity</strong> is an excellent signal for pretraining progress but a poor judge of downstream usefulness — a fluent model can still be wrong, unhelpful, or hallucinating.</li>
+          <li><strong>LLM-as-a-judge</strong> (use a strong model to score outputs against a rubric) correlates well with human preference and scales cheaply; watch for position bias and self-preference.</li>
+          <li><strong>Contamination</strong> (benchmark questions appearing in training data) inflates public scores. Treat leaderboard numbers as rough filters; run held-out private evals for anything that matters.</li>
+          <li><strong>Build task-specific evals</strong>: a golden dataset, exact-match or execution-based scoring where possible, LLM-judge for open-ended, and a regression harness you run on every model change. Goodhart's Law is always watching.</li>
+        </ul>
+        <p>With solid evals in hand, you're ready to tackle retrieval-augmented generation — giving the model access to fresh knowledge at inference time. On to Plate 17.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "16-evaluation" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

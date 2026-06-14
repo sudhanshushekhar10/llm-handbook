@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 09 · Fine-tuning: The Big Picture — The Field Guide to LLMs</title>
+  <meta name="description" content="A decision framework for adapting LLMs: prompt engineering, RAG, fine-tuning, and pretraining — when to use each, how SFT and instruction tuning work, and the pitfalls of catastrophic forgetting.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 09 · Part IV — Adapting Models</div>
+          <h1>Fine-tuning: The Big Picture</h1>
+          <p class="standfirst">Before you touch a training script, there is a decision to make — and getting it wrong wastes weeks. Four levers can change a model's behavior: prompting, RAG, fine-tuning, and pretraining. Each costs a different amount of money, time, and expertise. This plate is the map.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 18 min</span>
+            <span><b>Prereqs</b> · Plate 06</span>
+            <span><b>Code</b> · trl · transformers</span>
+          </div>
+        </div>
+
+        <h2 id="four-ways">Four ways to change a model's behavior</h2>
+        <p>
+          A base language model is an extraordinary general engine — it has compressed an enormous slice of human knowledge
+          into its weights. But "general" doesn't always mean "useful for your task right now." You may need it to answer
+          only about your product's documentation, produce JSON in a specific schema, speak in a certain persona, or handle
+          a domain it has barely seen. There are four distinct levers you can pull, in roughly ascending order of effort and
+          permanence.
+        </p>
+
+        <p><strong>Lever 1 — Prompting.</strong> Write better instructions at runtime. A few examples in the context window
+          (<span class="gloss" data-term="zero-shot">zero-shot</span>, few-shot) can push a capable model surprisingly far.
+          Cost: engineering hours. Change is ephemeral — vanishes when the context ends.</p>
+
+        <p><strong>Lever 2 — RAG.</strong> <span class="gloss" data-term="rag">Retrieval-Augmented Generation</span> leaves
+          the model weights untouched. Instead, you retrieve relevant documents at query time and paste them into the
+          <span class="gloss" data-term="prompt">prompt</span>. The model reasons over the retrieved text rather than
+          recalling facts from its parameters. Fresh facts, no training required.<a class="cite" data-ref="lewis2020"></a></p>
+
+        <p><strong>Lever 3 — Fine-tuning.</strong> <span class="gloss" data-term="fine-tuning">Fine-tuning</span> resumes
+          training on your own curated dataset to bake new behavior into the weights. This changes <em>what the model
+          knows how to do</em> — its style, format, or skill profile. It does not reliably inject factual knowledge that
+          can change over time (use RAG for that).</p>
+
+        <p><strong>Lever 4 — (Re)pretraining.</strong> Train a model from scratch, or continue
+          <span class="gloss" data-term="pretraining">pretraining</span> on a large domain corpus (e.g., all of PubMed).
+          This is the nuclear option: millions of dollars in compute, weeks of wall time, a team of specialists. Almost
+          nobody outside a foundation-model lab does this for production.</p>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · source code vs reference manual vs asking nicely</div>
+          <p><strong>Fine-tuning changes the source code.</strong> The behavior is compiled into the binary — permanent,
+          fast at inference, but costly to update. <strong>RAG hands the model a reference manual at runtime.</strong>
+          The manual can be swapped, updated, and versioned without touching the model at all. <strong>Prompting just
+          asks nicely.</strong> It costs nothing to try, but the model has to already know how to do the thing — you're
+          just reminding it.</p>
+        </div>
+
+        <h2 id="decision-guide">Prompt vs RAG vs fine-tune vs pretrain: a decision guide</h2>
+        <p>
+          The right tool depends on your specific need. Here is a compact decision table. Start from the top; the first
+          row that matches your situation is usually your answer.
+        </p>
+
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Need</th>
+                <th>Recommended approach</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>Fresh or frequently changing facts</b> (today's prices, live docs, private knowledge base)</td>
+                <td>RAG</td>
+                <td>Facts live outside the weights, so they can be updated without retraining. Fine-tuning on facts leads to hallucinations and staleness.</td>
+              </tr>
+              <tr>
+                <td><b>New output format or schema</b> (always reply as JSON, follow a specific template)</td>
+                <td>Fine-tune <em>or</em> structured-output decoding</td>
+                <td>A few hundred examples teaching the format beats fragile prompt engineering. Structured-output libraries can enforce schema without training.</td>
+              </tr>
+              <tr>
+                <td><b>New skill or domain style</b> (write SQL like a DBA, summarize like a radiologist, code in an internal DSL)</td>
+                <td>Fine-tune (SFT)</td>
+                <td>Skills are behavioral — they belong in the weights. Prompting helps at the margins; fine-tuning internalizes the style robustly.</td>
+              </tr>
+              <tr>
+                <td><b>Private data the model must not reveal</b> (train on PII but never expose it)</td>
+                <td>Be very careful — prefer RAG with access control</td>
+                <td>Fine-tuning memorizes training data; extraction attacks can surface it. Access-controlled RAG keeps private data outside the weights entirely.</td>
+              </tr>
+              <tr>
+                <td><b>Lowest inference cost / smallest latency</b></td>
+                <td>Fine-tune a small model</td>
+                <td>A fine-tuned 3B model can outperform a prompted 70B on narrow tasks at a fraction of the serving cost.</td>
+              </tr>
+              <tr>
+                <td><b>Entirely new language or domain vocabulary</b> (novel scientific corpus, code in a new language)</td>
+                <td>Continued pretraining + fine-tune</td>
+                <td>If the base model has barely seen the domain, SFT has nothing to build on. Continued pretraining first gives the model the raw vocabulary, then SFT shapes behavior.</td>
+              </tr>
+              <tr>
+                <td><b>Capability is already there, model just ignores instructions</b></td>
+                <td>Prompt engineering first; few-shot examples</td>
+                <td>Base models are capable but unfocused. A good system prompt and a handful of examples may be all you need — try before spending on training.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · don't fine-tune to inject facts</div>
+          <p>The most common fine-tuning mistake: trying to teach the model new factual knowledge by putting facts in training
+          examples. Models fine-tuned this way hallucinate more, not less — the model learns the <em>format</em> of a
+          confident answer while the underlying fact retrieval is still unreliable. If the information changes (prices, names,
+          dates), you'll be constantly retraining. Use <span class="gloss" data-term="rag">RAG</span> for facts;
+          use fine-tuning for skills and style.</p>
+        </div>
+
+        <h2 id="sft-and-instruction-tuning">Supervised fine-tuning and instruction tuning</h2>
+        <p>
+          <span class="gloss" data-term="sft">Supervised fine-tuning</span> (SFT) is the most common form of fine-tuning.
+          You assemble a dataset of <em>(input, ideal output)</em> pairs and continue training the model on them — same
+          cross-entropy loss used in pretraining, but on your curated data instead of the raw web. The model learns to
+          produce outputs that look like the examples in your dataset.
+        </p>
+        <p>
+          <span class="gloss" data-term="instruction-tuning">Instruction tuning</span> is SFT applied to a particular
+          dataset shape: instructions paired with helpful responses. The InstructGPT<a class="cite" data-ref="ouyang2022"></a>
+          paper from OpenAI in 2022 crystallized this idea — a base GPT-3 model, fine-tuned on 13,000 instruction-response
+          pairs from human annotators, became dramatically more useful as a general assistant. This is how most "chat" or
+          "instruct" variants of open models are created.
+        </p>
+        <p>
+          One practical detail that trips up almost every engineer building their first fine-tune: the
+          <span class="gloss" data-term="chat-template">chat template</span>. Chat models expect input formatted with
+          special tokens marking turn boundaries (e.g., <code>&lt;|user|&gt;</code>, <code>&lt;|assistant|&gt;</code>,
+          or the Llama-specific <code>[INST]</code> syntax). If you format your training data differently from how the
+          model was originally fine-tuned, the fine-tune silently fails. Plate 12 covers this in depth.
+        </p>
+        <p>
+          After SFT, many models go through a second stage of <span class="gloss" data-term="alignment">alignment</span>
+          training — teaching them to be helpful, harmless, and honest. That's the subject of Plate 11. For now, think
+          of SFT as the first and most fundamental step.
+        </p>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>SFT is essentially supervised learning with a language model loss — it's logistic regression on tokens, not a mysterious ritual.
+          Your training loop looks like: format examples into input-output pairs, tokenize them, run a forward pass,
+          compute cross-entropy loss on the output tokens only (mask the input/prompt tokens so you don't "teach" the model
+          its own prompt), backpropagate, update weights. The <code>trl</code> library's <code>SFTTrainer</code> wraps
+          this boilerplate so you hand it a dataset and a model and it does the masking automatically.</p>
+        </div>
+
+        <h2 id="full-vs-peft">Full fine-tuning vs PEFT</h2>
+        <p>
+          Once you've decided to fine-tune, you face a second decision: <em>which parameters do you update?</em>
+        </p>
+        <p>
+          <strong>Full fine-tuning</strong> updates every weight in the model. For a 7B-parameter model using
+          the AdamW optimizer, that means storing gradients and optimizer states alongside the weights — roughly
+          16 bytes per parameter, or over 100 GB of GPU memory. On a single A100 (80 GB VRAM), a 7B full fine-tune
+          is essentially impossible without multiple GPUs and gradient checkpointing tricks. For a 70B model, you're
+          looking at a small cluster.
+        </p>
+        <p>
+          <span class="gloss" data-term="peft">Parameter-Efficient Fine-Tuning</span> (PEFT) is the family of
+          techniques that bypass this problem by freezing most of the model and training only a small set of additional
+          parameters. The flagship approach is <span class="gloss" data-term="lora">LoRA</span> (Low-Rank
+          Adaptation)<a class="cite" data-ref="hu2021"></a> — it represents weight updates as products of two tiny
+          matrices and adds them on top of the frozen weights. The resulting "adapter" is typically 1–2% the size of the
+          base model. The earlier adapter approach<a class="cite" data-ref="houlsby2019"></a> inserted small bottleneck
+          modules between layers; LoRA is more elegant and has largely superseded it.
+        </p>
+        <p>
+          Plate 10 covers LoRA mechanics in full, including the math behind low-rank decomposition, the
+          <code>rank</code> and <code>alpha</code> hyperparameters, which layers to target, and QLoRA (LoRA on a
+          4-bit quantized base). If you're planning to run a fine-tune on a single GPU, go read Plate 10 next — it is
+          the practical how-to.
+        </p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 520 180" role="img" aria-label="Full fine-tuning vs PEFT comparison diagram">
+            <defs>
+              <marker id="arr09" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="var(--text-2)"/>
+              </marker>
+            </defs>
+            <!-- Full fine-tuning box -->
+            <rect x="20" y="20" width="200" height="140" rx="8" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="120" y="44" text-anchor="middle" font-weight="700" font-size="13" fill="var(--text-1)">Full Fine-Tuning</text>
+            <rect x="40" y="56" width="160" height="28" rx="4" fill="var(--accent)" opacity="0.85"/>
+            <text x="120" y="75" text-anchor="middle" font-size="11" fill="#fff">All 7B weights updated</text>
+            <text x="120" y="104" text-anchor="middle" font-size="11" fill="var(--text-2)">Memory: ~112 GB</text>
+            <text x="120" y="122" text-anchor="middle" font-size="11" fill="var(--text-2)">(16 B/param × 7B)</text>
+            <text x="120" y="148" text-anchor="middle" font-size="10" fill="var(--text-3)">Needs multi-GPU cluster</text>
+
+            <!-- PEFT box -->
+            <rect x="300" y="20" width="200" height="140" rx="8" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="400" y="44" text-anchor="middle" font-weight="700" font-size="13" fill="var(--text-1)">PEFT / LoRA</text>
+            <rect x="320" y="56" width="160" height="28" rx="4" fill="var(--surface-3)" stroke="var(--border)"/>
+            <text x="400" y="75" text-anchor="middle" font-size="11" fill="var(--text-2)">7B weights frozen</text>
+            <rect x="370" y="92" width="60" height="22" rx="4" fill="var(--accent)" opacity="0.85"/>
+            <text x="400" y="107" text-anchor="middle" font-size="10" fill="#fff">~70M LoRA</text>
+            <text x="400" y="130" text-anchor="middle" font-size="11" fill="var(--text-2)">Memory: ~6–8 GB</text>
+            <text x="400" y="148" text-anchor="middle" font-size="10" fill="var(--text-3)">Runs on a single GPU</text>
+
+            <!-- VS label -->
+            <text x="260" y="100" text-anchor="middle" font-size="16" font-weight="700" fill="var(--text-3)">vs</text>
+          </svg>
+          <figcaption><b>Full fine-tuning vs PEFT.</b> Full fine-tuning updates every parameter — memory scales linearly with model size. LoRA freezes the base and trains only a small low-rank adapter, dropping memory requirements by an order of magnitude. See <a href="10-peft-lora.html">Plate&nbsp;10</a> for the mechanics.</figcaption>
+        </figure>
+
+        <h2 id="pitfalls">Pitfalls: forgetting, overfitting, the alignment tax</h2>
+        <p>
+          Fine-tuning is powerful but has a trio of failure modes worth understanding before you write a single line of
+          training code.
+        </p>
+
+        <p><strong>Catastrophic forgetting.</strong> When you fine-tune on a narrow dataset, the model gradient-descends
+          toward your examples and away from everything it learned during pretraining. This can degrade performance on tasks
+          unrelated to your training data — the model "forgets" its general capabilities. The severity depends on how far
+          your dataset is from the pretraining distribution and how many steps you train. PEFT methods like LoRA largely
+          mitigate this because the frozen weights retain all original knowledge; only the small adapter changes.</p>
+
+        <p><strong>Overfitting on small data.</strong> A 7B-parameter model has an enormous capacity to memorize. If you
+          fine-tune on only a few hundred examples, it can overfit in just a few epochs — achieving near-zero training loss
+          while performing poorly on new inputs. Signs: the model starts repeating training examples verbatim, or its outputs
+          collapse to a narrow set of patterns. Mitigations: early stopping on a held-out validation set, regularization,
+          <span class="gloss" data-term="distillation">distillation</span> (generating synthetic data from a larger model
+          to augment your dataset), and using PEFT (fewer trainable parameters = lower overfitting risk).</p>
+
+        <p><strong>The alignment tax.</strong> This one is subtler. When you fine-tune a model that went through
+          <span class="gloss" data-term="alignment">alignment</span> training (RLHF, DPO — Plate 11), your SFT may
+          partially undo the safety and helpfulness behaviors that alignment baked in. This is sometimes called the
+          "alignment tax": the behavioral guardrails cost some task-specific capability, and re-tuning for capability can
+          cost some of the guardrails. There's no universal fix — the typical approach is to either start from a base
+          (pre-alignment) model and do your own alignment after SFT, or to fine-tune carefully on a small dataset for
+          minimal epochs to preserve alignment.</p>
+
+        <h2 id="sft-code">A minimal SFT example</h2>
+        <p>
+          Below is a real, runnable SFT setup using the <code>trl</code> library's <code>SFTTrainer</code>.
+          The Local tab uses a tiny model (GPT-2) so it runs on CPU/MPS. The Cloud tab uses Mistral-7B on a CUDA GPU,
+          which is the practical minimum for production-quality results. The actual LoRA configuration details — rank,
+          alpha, target_modules — are covered in <a href="10-peft-lora.html">Plate&nbsp;10</a>; here we just show the
+          SFT training loop structure.
+        </p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · SFT with trl</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · CPU/MPS (GPT-2)</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA (Mistral-7B)</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install trl transformers datasets accelerate
+from datasets import Dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM
+from trl import SFTTrainer, SFTConfig
+
+# --- 1. Tiny dataset of instruction-response pairs ---
+data = [
+    {"text": "&lt;|user|&gt;\nWhat is the capital of France?\n&lt;|assistant|&gt;\nParis."},
+    {"text": "&lt;|user|&gt;\nExplain REST in one sentence.\n&lt;|assistant|&gt;\nREST is a stateless HTTP convention where resources are identified by URLs and manipulated with standard verbs (GET, POST, PUT, DELETE)."},
+    {"text": "&lt;|user|&gt;\nWrite a Python function to reverse a string.\n&lt;|assistant|&gt;\ndef reverse(s: str) -&gt; str:\n    return s[::-1]"},
+]
+dataset = Dataset.from_list(data)
+
+# --- 2. Load model (tiny, runs on CPU/MPS) ---
+model_id = "gpt2"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+tokenizer.pad_token = tokenizer.eos_token
+model = AutoModelForCausalLM.from_pretrained(model_id)
+
+# --- 3. Configure SFT ---
+config = SFTConfig(
+    output_dir="./sft-gpt2",
+    num_train_epochs=3,
+    per_device_train_batch_size=2,
+    learning_rate=2e-5,
+    logging_steps=10,
+    max_seq_length=256,
+)
+
+trainer = SFTTrainer(
+    model=model,
+    args=config,
+    train_dataset=dataset,
+    processing_class=tokenizer,
+)
+
+# --- 4. Train ---
+trainer.train()
+print("Training complete. Model saved to ./sft-gpt2")</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install trl transformers datasets accelerate bitsandbytes peft
+# Requires: ~16 GB VRAM for fp16, or ~8 GB with QLoRA (see Plate 10)
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from peft import LoraConfig
+from trl import SFTTrainer, SFTConfig
+import torch
+
+# --- 1. Load a real instruction dataset ---
+dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft[:5000]")
+
+# --- 2. Load Mistral-7B in 4-bit (QLoRA) ---
+model_id = "mistralai/Mistral-7B-Instruct-v0.3"
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype=torch.bfloat16,
+)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    quantization_config=bnb_config,
+    device_map="auto",
+)
+
+# --- 3. LoRA adapter config (see Plate 10 for tuning these) ---
+peft_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "v_proj"],
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+)
+
+# --- 4. SFT config ---
+config = SFTConfig(
+    output_dir="./sft-mistral-7b",
+    num_train_epochs=1,
+    per_device_train_batch_size=4,
+    gradient_accumulation_steps=4,
+    learning_rate=2e-4,
+    bf16=True,
+    logging_steps=25,
+    max_seq_length=1024,
+)
+
+trainer = SFTTrainer(
+    model=model,
+    args=config,
+    train_dataset=dataset,
+    peft_config=peft_config,
+    processing_class=tokenizer,
+)
+
+# --- 5. Train ---
+trainer.train()
+trainer.save_model("./sft-mistral-7b")</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>{'loss': 3.812, 'epoch': 1.0}   # early loss — model is warming up
+{'loss': 3.241, 'epoch': 2.0}   # loss falling → model learning the format
+{'loss': 2.987, 'epoch': 3.0}   # converging
+Training complete. Model saved to ./sft-gpt2
+# Cloud: steps print per 25 batches; final adapter ~70 MB on disk</code></pre>
+          </div>
+        </div>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>Four levers adapt model behavior: <strong>prompting</strong> (fastest, no persistence), <strong>RAG</strong> (swappable knowledge, no training), <strong>fine-tuning</strong> (bakes skills and style into weights), and <strong>pretraining</strong> (nuclear option for entirely new domains).</li>
+          <li>Use RAG for facts that change; use fine-tuning for behaviors and skills that should be consistent. Never fine-tune to inject volatile knowledge.</li>
+          <li><strong>SFT</strong> is fine-tuning on (input, output) pairs with a standard cross-entropy loss; <strong>instruction tuning</strong> is SFT on instruction-response data specifically.</li>
+          <li><strong>Full fine-tuning</strong> costs ~16 bytes/param of memory — prohibitive for large models on a single GPU. <strong>PEFT</strong> (especially LoRA) freezes the base and trains a tiny adapter, cutting memory by 10–20×.</li>
+          <li>Watch for <strong>catastrophic forgetting</strong> (narrow SFT erases general capabilities), <strong>overfitting</strong> (too few examples, too many epochs), and the <strong>alignment tax</strong> (fine-tuning can undo safety behaviors).</li>
+        </ul>
+        <p>
+          The next plate, <a href="10-peft-lora.html">Plate&nbsp;10</a>, goes deep on LoRA mechanics — the math of low-rank matrices, the <code>rank</code> and <code>alpha</code> hyperparameters, QLoRA for 4-bit training, and exactly which layers to target. If you're running an actual fine-tune, that's your next stop.
+        </p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "09-finetuning-overview" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

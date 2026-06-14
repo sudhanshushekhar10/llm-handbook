@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 14 · Inference &amp; Serving — The Field Guide to LLMs</title>
+  <meta name="description" content="How LLMs actually run in production: the prefill/decode split, KV caches, continuous batching, PagedAttention, FlashAttention, speculative decoding, and how to pick a serving stack.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 14 · Part V — Efficient &amp; Deployable</div>
+          <h1>Inference &amp; Serving</h1>
+          <p class="standfirst">An LLM talking to a single user on idle hardware is a solved problem. An LLM fielding thousands of concurrent requests with tight latency SLOs is a hard systems problem — one that looks surprisingly familiar once you understand the two phases of generation.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 20 min</span>
+            <span><b>Prereqs</b> · Plates 06, 13</span>
+            <span><b>Code</b> · Ollama · vLLM · OpenAI-compatible client</span>
+          </div>
+        </div>
+
+        <!-- ============ ARTICLE BODY ============ -->
+
+        <h2 id="two-phases">Two phases: prefill and decode</h2>
+        <p>
+          Every time you send a prompt to an <span class="gloss" data-term="inference">inference</span> server, generation
+          splits into two very different workloads.
+        </p>
+        <p>
+          <strong>Prefill</strong> is the first pass: the entire prompt — say, 500 tokens of system instructions plus
+          your user message — is fed through the model <em>in one parallel forward pass</em>. Because all prompt tokens are
+          available simultaneously, the GPU can compute attention across the full sequence in one shot, just like training.
+          This is <em>compute-bound</em>: the GPU's tensor cores are the bottleneck.
+        </p>
+        <p>
+          <strong>Decode</strong> is everything after: generating the response one <span class="gloss" data-term="autoregressive">autoregressive</span>
+          token at a time. Each new token depends on all previous ones, so the model does a separate forward pass per token.
+          There's no way to parallelise within a sequence. Worse, the model loads nearly all of its weights from GPU memory
+          for every single token — and generates only a handful of floating-point results in return. This is
+          <em>memory-bandwidth-bound</em>: the GPU spends most of its time waiting for memory, not computing.
+        </p>
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>Prefill is like a batch job: lots of data, fully parallelisable, predictable duration. Decode is like a
+          tight request/response loop: one result per round-trip, dominated by I/O latency. The serving stack has to handle
+          both modes efficiently at the same time — with different batching strategies for each.</p>
+        </div>
+
+        <p>
+          The implication for metrics is immediate. <strong>Time to first token (TTFT)</strong> is determined almost entirely
+          by prefill latency — how quickly the server can process your prompt. <strong>Tokens per second</strong> during
+          decode is determined by how fast weights can be streamed from GPU HBM. A GPU with more memory bandwidth (not just
+          raw FLOPs) produces faster generation on long outputs.
+        </p>
+
+        <h2 id="kv-cache">The KV cache: memoization for attention</h2>
+        <p>
+          Consider what the decode phase actually computes. At each step, <span class="gloss" data-term="attention">attention</span>
+          asks: given the current query token, what do all the previous keys and values say? But those previous keys and values
+          haven't changed — they were computed during prefill and earlier decode steps. Recomputing them from scratch on every
+          single decode step would be catastrophically wasteful.
+        </p>
+        <p>
+          The <span class="gloss" data-term="kv-cache">KV cache</span> is the solution: store the key and value tensors for
+          every past token in GPU memory and reuse them. At step <em>t</em>, only the single new query needs to attend over the
+          full cached key-value sequence. This turns an O(n²) recomputation into an O(n) lookup.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · memoization</div>
+          <p>If you've ever written a recursive Fibonacci function and then added a cache to avoid recomputing sub-results,
+          you've done exactly this. The KV cache is <code>@lru_cache</code> for the attention layer: the first forward pass
+          is expensive (like computing fib(30) from scratch), and every subsequent decode step is cheap (like returning the
+          cached result). The tradeoff is the same too — you trade memory for time.</p>
+        </div>
+        <p>
+          The catch: KV cache memory is large and grows with every token generated. For a single request, the cache holds
+          two tensors (K and V) per layer, per head, per token. A 70B model with 80 layers, 8 KV heads (<span class="gloss" data-term="gqa">GQA</span>),
+          and a head dimension of 128, generating 2,048 tokens in <code>fp16</code>, consumes roughly:
+        </p>
+        <pre style="background:var(--surface-2);padding:1rem;border-radius:6px;overflow-x:auto"><code>2 (K+V) × 80 layers × 8 heads × 128 dim × 2,048 tokens × 2 bytes
+≈ 1.3 GB for a single request</code></pre>
+        <p>
+          Multiply by 50 concurrent requests and you've consumed 65 GB — which may exceed the space available for weights.
+          This is the central resource-management problem of LLM serving.
+        </p>
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · KV cache memory explodes at long context</div>
+          <p>KV cache size scales linearly with <span class="gloss" data-term="context-window">context window</span> length
+          <em>and</em> with the number of concurrent requests. A 128K-context model serving 20 parallel users can need
+          hundreds of gigabytes of KV cache — more than the weights themselves. This is exactly why
+          <span class="gloss" data-term="gqa">GQA</span> (Grouped Query Attention, Plate 15) was invented: sharing key and
+          value heads across groups of query heads cuts the KV cache by 4–8× at no meaningful quality cost. And it's why
+          <span class="gloss" data-term="quantization">quantization</span> (Plate 13) of the KV cache itself is increasingly
+          common — storing K/V in int8 instead of fp16 halves cache memory.</p>
+        </div>
+
+        <h2 id="batching">Batching: keeping the GPU busy</h2>
+        <p>
+          A GPU running decode for a <em>single request</em> is nearly idle — it loads gigabytes of weights to compute a
+          handful of values per token. The utilisation numbers are dismal: often below 5%. The fix is batching — processing
+          multiple requests through the same forward pass so those weight loads are amortised across many concurrent decode
+          steps.
+        </p>
+        <p>
+          <strong>Static batching</strong> (the naive approach) groups requests at arrival time and runs them together until
+          all finish. The problem is padding: the shortest sequence in the batch must wait for the longest to complete. A
+          batch of 32 requests where one is generating a 2,000-token essay holds the other 31 hostage for its entire
+          duration. GPU memory fills with KV cache for that one long sequence, and new requests queue behind it.
+        </p>
+        <p>
+          <strong>Continuous batching</strong> (also called in-flight or iteration-level batching) solves this. Instead of
+          locking a batch for the duration of all sequences, the scheduler makes a new batching decision at every single
+          decode step. As soon as one sequence finishes generating and emits its end-of-sequence token, a waiting request
+          is immediately slotted in to fill that slot. The GPU batch is therefore always full, and no single long request
+          can monopolise capacity.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · work-stealing thread pool / connection pool</div>
+          <p>Static batching is like a fixed-size thread pool where every thread grabs a task and holds it until done,
+          refusing to take a new one even if its task finishes early. Continuous batching is like a work-stealing scheduler
+          or a database connection pool: the moment a slot frees up, it's reassigned to the next waiter. The result is the
+          same high-throughput behaviour you'd expect from a well-tuned HTTP server under heterogeneous request durations.</p>
+        </div>
+
+        <h2 id="paged-attention">PagedAttention and continuous batching (vLLM)</h2>
+        <p>
+          Continuous batching is only half the story. The second problem is KV cache <em>fragmentation</em>. Because
+          requests vary in length and arrive at different times, a naively managed contiguous KV cache ends up with
+          fragmented free blocks — similar to heap fragmentation in a long-running process. You might have 40 GB free in
+          theory but be unable to allocate a contiguous 2 GB block for a new long request.
+        </p>
+        <p>
+          <strong>PagedAttention</strong><a class="cite" data-ref="kwon2023"></a>, introduced by the
+          <span class="gloss" data-term="vllm">vLLM</span> team, borrows the operating system's solution to exactly this
+          problem: virtual memory paging. Instead of pre-allocating a contiguous chunk for each request, the KV cache is
+          divided into fixed-size blocks (pages). Each request is assigned a page table mapping its logical token positions
+          to physical GPU memory blocks. Pages are allocated on demand and freed immediately when a request completes. Near
+          zero waste, zero fragmentation, and the ability to share pages between requests that share a common prefix
+          (system prompt caching).
+        </p>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key paper</div>
+          <div class="ref-card"><span class="yr">2023</span>
+            <div><cite>Efficient Memory Management for Large Language Model Serving with PagedAttention</cite>
+              <span class="auth">Kwon et al. — SOSP 2023</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">Introduced the virtual-memory abstraction for KV caches,
+              enabling near-zero waste and prefix sharing. The core innovation behind vLLM.
+              <a href="../references.html#ref-43">See reference [43] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <p>
+          vLLM combines PagedAttention with continuous batching into a single serving engine. It exposes an
+          OpenAI-compatible REST API, making it a drop-in replacement for most applications. On GPU clusters, vLLM
+          consistently achieves 3–10× higher throughput than naive serving because the GPU stays saturated — no wasted
+          cycles waiting on long-tail requests or fragmented memory.
+        </p>
+
+        <h2 id="flashattention-speculative">FlashAttention and speculative decoding</h2>
+        <p>
+          Two more techniques appear in nearly every serious serving stack; it's worth knowing what they actually do.
+        </p>
+        <h3>FlashAttention</h3>
+        <p>
+          Standard attention computes the full N×N attention matrix and materialises it in GPU HBM (high-bandwidth memory).
+          For a 4K-token sequence, that's a 4,096 × 4,096 matrix of floats — 64 MB per layer, and it must be written and
+          read twice (once to compute softmax, once to weight the values).
+          <span class="gloss" data-term="flashattention">FlashAttention</span><a class="cite" data-ref="dao2022"></a>
+          is an IO-aware rewrite of the attention kernel: it never materialises the full matrix. Instead, it tiles the
+          computation into SRAM-sized chunks that fit entirely in the GPU's on-chip cache, fusing the softmax and
+          the weighted sum into a single kernel pass. The result is mathematically <em>exact</em> (not approximate) and
+          roughly 2–4× faster, with memory usage that is O(N) instead of O(N²). FlashAttention is now the default
+          in every serious framework.
+        </p>
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>FlashAttention is a kernel-level cache-oblivious algorithm — the LLM equivalent of blocking a matrix
+          multiply to fit in L3 cache. It doesn't change the math at all; it changes the memory access pattern.
+          A GPU's SRAM is 1,000× faster than HBM, so eliminating the round-trips to HBM is the entire win.
+          Same output. Radically different I/O profile.</p>
+        </div>
+
+        <h3>Speculative decoding</h3>
+        <p>
+          Speculative decoding<a class="cite" data-ref="leviathan2022"></a> attacks the fundamental bottleneck of
+          autoregressive generation from a different angle. Observation: the large model (the "verifier") is doing one
+          token per step, but a much smaller <em>draft model</em> (say, 1B instead of 70B) can generate several tokens
+          almost instantly. Those draft tokens are probably right most of the time — simple continuations are predictable.
+        </p>
+        <p>
+          The trick: run the draft model for <em>k</em> steps to produce <em>k</em> candidate tokens, then feed all
+          <em>k+1</em> positions (prompt + drafts) to the large model in a <em>single parallel forward pass</em> for
+          verification. If the large model agrees on position <em>i</em>, accept it; when it first disagrees, reject from
+          that point and substitute the large model's token. On easy, predictable text (code comments, bullet lists,
+          boilerplate), acceptance rates of 70–90% are typical — meaning you get 3–5 effective tokens for the cost of one
+          large-model forward pass. Throughput goes up; correctness is guaranteed by construction.
+        </p>
+        <p>
+          The cost is running a second model and the coordination overhead. Speculative decoding is most effective when
+          the distribution of outputs is narrow (the draft model guesses right often), less effective on creative or
+          stochastic outputs.
+        </p>
+
+        <h2 id="serving-stack">Choosing a serving stack</h2>
+        <p>
+          The right engine depends on your hardware, scale, and operational preferences. Here is the practical breakdown:
+        </p>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>Engine</th><th>Best for</th><th>Key features</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong><span class="gloss" data-term="vllm">vLLM</span></strong></td>
+                <td>GPU production serving</td>
+                <td>PagedAttention, continuous batching, tensor parallelism, OpenAI API</td>
+                <td>The default choice for GPU clusters; excellent throughput</td>
+              </tr>
+              <tr>
+                <td><strong>TGI (Text Generation Inference)</strong></td>
+                <td>GPU serving, HF ecosystem</td>
+                <td>FlashAttention, continuous batching, gRPC + REST</td>
+                <td>Hugging Face's own engine; slightly easier HF Hub integration</td>
+              </tr>
+              <tr>
+                <td><strong>SGLang</strong></td>
+                <td>Complex multi-turn / agentic workloads</td>
+                <td>RadixAttention (tree-structured prefix caching), structured output</td>
+                <td>Best when requests share long common prefixes (system prompts, few-shot examples)</td>
+              </tr>
+              <tr>
+                <td><strong><span class="gloss" data-term="llama-cpp">llama.cpp</span></strong></td>
+                <td>CPU / local developer use</td>
+                <td>GGUF, Apple Metal, quantized inference, minimal dependencies</td>
+                <td>Runs on laptops; single-user throughput; low ops burden</td>
+              </tr>
+              <tr>
+                <td><strong><span class="gloss" data-term="ollama">Ollama</span></strong></td>
+                <td>Local developer UX</td>
+                <td>Wraps llama.cpp, model registry, OpenAI-compatible API, one command to run</td>
+                <td>Best developer experience for local use; not designed for production multi-user serving</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="hands-on">Hands-on: serving and calling a model</h2>
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>bash · start a server</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · Ollama</button>
+            <button class="tab" data-pane="cloud">Cloud · vLLM</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-bash"># Install Ollama (macOS)
+brew install ollama
+
+# Pull and serve a model — Ollama starts a local OpenAI-compatible server
+# on http://localhost:11434 automatically.
+ollama serve &amp;       # starts the daemon if not already running
+ollama pull llama3.2  # downloads Llama 3.2 3B Q4_K_M GGUF (~2 GB)
+
+# Verify the server is up:
+curl http://localhost:11434/v1/models</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-bash"># Install vLLM on a GPU instance (requires CUDA 11.8+):
+# pip install vllm
+
+# Serve a model with an OpenAI-compatible endpoint on port 8000.
+# vLLM enables PagedAttention and continuous batching automatically.
+vllm serve meta-llama/Llama-3.1-8B-Instruct \
+  --dtype bfloat16 \
+  --max-model-len 8192 \
+  --tensor-parallel-size 1 \
+  --port 8000
+
+# For a 70B model across 4 GPUs:
+# vllm serve meta-llama/Llama-3.1-70B-Instruct \
+#   --tensor-parallel-size 4 --dtype bfloat16</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code># Ollama: {"models":[{"name":"llama3.2:latest","modified_at":"...","size":2019393024}]}
+
+# vLLM (truncated startup log):
+# INFO:     Loading model weights...
+# INFO:     Model loaded in 8.2s. GPU memory: 14.2 GB / 24 GB used.
+# INFO:     PagedAttention enabled. Block size: 16 tokens.
+# INFO:     Application startup complete. Serving on http://0.0.0.0:8000</code></pre>
+          </div>
+        </div>
+
+        <p>Both servers expose an OpenAI-compatible <code>/v1/chat/completions</code> endpoint. The same client code hits either:</p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · OpenAI-compatible client</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="default"><pre><code class="language-python"># pip install openai
+from openai import OpenAI
+
+# Point at your local Ollama server (or swap base_url for vLLM's address):
+client = OpenAI(
+    base_url="http://localhost:11434/v1",  # Ollama
+    # base_url="http://localhost:8000/v1",  # vLLM
+    api_key="ollama",                       # placeholder; Ollama ignores the key
+)
+
+response = client.chat.completions.create(
+    model="llama3.2",      # or "meta-llama/Llama-3.1-8B-Instruct" for vLLM
+    messages=[{"role": "user", "content": "Explain the KV cache in one paragraph."}],
+    max_tokens=200,
+    stream=True,           # stream tokens as they are decoded
+)
+
+for chunk in response:
+    delta = chunk.choices[0].delta.content
+    if delta:
+        print(delta, end="", flush=True)
+print()
+
+# For latency measurement, capture the first chunk's timestamp:
+import time
+t0 = time.perf_counter()
+first_token_seen = False
+for chunk in client.chat.completions.create(
+    model="llama3.2",
+    messages=[{"role": "user", "content": "Hello"}],
+    stream=True,
+):
+    if not first_token_seen and chunk.choices[0].delta.content:
+        print(f"TTFT: {(time.perf_counter() - t0)*1000:.0f} ms")
+        first_token_seen = True</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>The KV cache stores the key and value tensors computed for each
+token during the attention mechanism, so they don't need to be
+recomputed on every decode step. This turns attention from an
+O(n²) operation per step into an O(n) lookup...
+
+TTFT: 147 ms   # prefill of a short prompt on a laptop CPU via Ollama</code></pre>
+          </div>
+        </div>
+
+        <h2 id="metrics">The metrics that matter</h2>
+        <p>
+          A <span class="gloss" data-term="serving">serving</span> system has a latency dimension and a throughput
+          dimension, and they pull in opposite directions. Here are the three numbers every operator watches:
+        </p>
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>Metric</th><th>Definition</th><th>What drives it</th><th>Typical target</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>TTFT</strong> (Time to First Token)</td>
+                <td>Wall-clock time from request receipt to the first token in the response stream</td>
+                <td>Prefill latency; prompt length; server queue depth</td>
+                <td>&lt;200 ms for interactive; &lt;2 s for batch</td>
+              </tr>
+              <tr>
+                <td><strong>TPOT</strong> (Time per Output Token)</td>
+                <td>Average latency per generated token after the first</td>
+                <td>GPU memory bandwidth; batch size; model size</td>
+                <td>&lt;50 ms/token ≈ 20 tok/s for readable streaming</td>
+              </tr>
+              <tr>
+                <td><strong>Throughput</strong> (tok/s, system-wide)</td>
+                <td>Total tokens generated per second across all concurrent requests</td>
+                <td>Batch size; GPU utilisation; continuous batching efficiency</td>
+                <td>Maximise for batch workloads; trade off against TTFT for interactive</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The fundamental tension: increasing batch size improves GPU utilisation (throughput goes up) but also increases
+          queuing delay for new requests (TTFT goes up). A well-tuned continuous batching engine finds the operating point
+          that saturates the GPU without letting queue depths grow unbounded — exactly the problem any async backend
+          engineer has solved in a different context.
+        </p>
+        <p>
+          For monitoring, instrument your serving stack to emit per-request TTFT, TPOT, and prompt/completion token counts.
+          Aggregate them at p50/p95/p99. A spike in p95 TTFT usually means the queue is backing up (add capacity or raise
+          batch priority). A spike in TPOT usually means the GPU is undersaturated (bigger batch) or memory-bandwidth is
+          exhausted (quantize the KV cache or switch to a GQA model).
+        </p>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>Generation has two phases: <strong>prefill</strong> (the whole prompt, compute-bound, fast) and <strong>decode</strong> (one token at a time, memory-bandwidth-bound, the real bottleneck).</li>
+          <li>The <strong>KV cache</strong> is memoization for attention: past keys and values are stored so only the new query needs to be computed. It dominates GPU memory and grows with context length and batch size.</li>
+          <li><strong>Continuous batching</strong> refills the decode batch on every step as sequences finish, keeping GPU utilisation near 100%.</li>
+          <li><strong>PagedAttention</strong> (vLLM) applies virtual memory paging to the KV cache, eliminating fragmentation and enabling prefix sharing.</li>
+          <li><strong>FlashAttention</strong> is an IO-aware kernel that avoids materialising the N×N attention matrix, giving exact attention at O(N) memory.</li>
+          <li><strong>Speculative decoding</strong> uses a cheap draft model to propose tokens in parallel; the large model verifies them in one forward pass, giving 3–5× effective throughput on predictable text.</li>
+          <li>Stack choice: <strong>vLLM</strong> or <strong>TGI</strong> for GPU production; <strong>SGLang</strong> for prefix-heavy workloads; <strong>Ollama/llama.cpp</strong> for local development.</li>
+          <li>Watch <strong>TTFT</strong>, <strong>TPOT</strong>, and <strong>system throughput</strong>. Latency and throughput trade off — continuous batching is what keeps both acceptable simultaneously.</li>
+        </ul>
+        <p>The serving layer is now efficient. The next question is the shape of the model itself — giant parameter counts, smarter attention, and architectures that aren't transformers at all. Next: advanced architectures.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "14-inference-serving" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

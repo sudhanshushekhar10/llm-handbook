@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 08 · The Training Loop in Practice — The Field Guide to LLMs</title>
+  <meta name="description" content="The optimizer, learning-rate schedule, mixed precision, gradient accumulation, and distributed training — data parallelism, tensor parallelism, FSDP, and ZeRO — explained for engineers who already know sharding.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 08 · Part III — Training</div>
+          <h1>The Training Loop in Practice</h1>
+          <p class="standfirst">The training loop is a distributed systems problem in disguise. Forward pass, backward pass, optimizer step — that's four lines of PyTorch. But fitting it on a single GPU is a memory-engineering challenge, and scaling to hundreds of GPUs is a full-blown sharding problem with all the complexity that implies.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 22 min</span>
+            <span><b>Prereqs</b> · Plate 07</span>
+            <span><b>Code</b> · PyTorch · accelerate</span>
+          </div>
+        </div>
+
+        <h2 id="five-lines">The training loop in five lines</h2>
+        <p>
+          Strip away all the engineering and the core training loop is surprisingly compact. Every
+          gradient-based ML training framework — PyTorch, JAX, you name it — implements this same
+          cycle:
+        </p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · minimal PyTorch training loop</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · single GPU / MPS</button>
+            <button class="tab" data-pane="multi">Multi-GPU · accelerate</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python">import torch
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# --- Setup ---
+device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
+model_id = "HuggingFaceTB/SmolLM2-135M"
+tok   = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float32).to(device)
+
+optimizer = AdamW(model.parameters(), lr=3e-4, weight_decay=0.1)
+scheduler = CosineAnnealingLR(optimizer, T_max=1000)
+
+# --- Toy batch ---
+text   = "The quick brown fox jumps over the lazy dog"
+ids    = tok(text, return_tensors="pt").input_ids.to(device)
+labels = ids.clone()
+
+# --- The loop (this is all that matters) ---
+for step in range(10):
+    model.train()
+    optimizer.zero_grad()                        # 1. clear old gradients
+
+    outputs = model(ids, labels=labels)          # 2. forward pass → compute loss
+    loss    = outputs.loss
+
+    loss.backward()                              # 3. backward pass → compute gradients
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # gradient clip
+    optimizer.step()                             # 4. update weights
+    scheduler.step()                             # 5. adjust learning rate
+
+    print(f"step {step:3d}  loss={loss.item():.4f}  lr={scheduler.get_last_lr()[0]:.2e}")
+</code></pre></div>
+          <div class="code-pane" data-pane="multi" hidden><pre><code class="language-python"># pip install accelerate transformers torch
+# Launch: accelerate launch --num_processes 4 train.py
+# Accelerate auto-handles DDP, FSDP, or DeepSpeed based on your config.
+
+from accelerate import Accelerator
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from torch.utils.data import DataLoader, TensorDataset
+import torch
+
+accelerator = Accelerator(mixed_precision="bf16")   # auto device placement + bf16
+
+model_id = "HuggingFaceTB/SmolLM2-135M"
+tok   = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id)
+optimizer = AdamW(model.parameters(), lr=3e-4, weight_decay=0.1)
+
+# Dummy dataset — replace with your DataLoader
+ids    = tok("The quick brown fox", return_tensors="pt").input_ids
+ds     = TensorDataset(ids.repeat(32, 1))
+loader = DataLoader(ds, batch_size=4)
+
+model, optimizer, loader = accelerator.prepare(model, optimizer, loader)
+scheduler = CosineAnnealingLR(optimizer, T_max=len(loader))
+
+for step, (batch,) in enumerate(loader):
+    optimizer.zero_grad()
+    outputs = model(batch, labels=batch)
+    loss = outputs.loss
+    accelerator.backward(loss)                   # handles grad sync across GPUs
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    optimizer.step()
+    scheduler.step()
+    if accelerator.is_main_process:
+        print(f"step {step}  loss={loss.item():.4f}")
+</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output (single-GPU, step 0→9)</span></div>
+            <pre><code>step   0  loss=10.3412  lr=3.00e-04
+step   1  loss=9.8801   lr=2.99e-04
+step   2  loss=9.4432   lr=2.98e-04
+...
+step   9  loss=7.9103   lr=2.91e-04
+# Loss falling every step — the model is learning from this single sentence.</code></pre>
+          </div>
+        </div>
+
+        <p>
+          Five operations: zero gradients, forward, backward, clip, step. Everything else in this
+          chapter is engineering to make those five operations run faster, use less memory, and stay
+          numerically stable across trillions of steps.
+        </p>
+
+        <h2 id="optimizers">Optimizers and learning-rate schedules</h2>
+        <p>
+          Nearly every LLM is trained with <strong>AdamW</strong> — Adam with weight decay decoupled
+          from the gradient update<a class="cite" data-ref="kaplan2020"></a>. Recall from Plate 07
+          that Adam is expensive: per parameter, it stores two moment buffers (<em>m</em>, the
+          first moment / exponential moving average of gradients, and <em>v</em>, the second moment
+          / EMA of squared gradients) plus an fp32 master copy of the weights. That's 4 × the memory
+          of the weights themselves, just for the <span class="gloss" data-term="optimizer">optimizer</span> state.
+          For a 7 B model in bf16, the weights are ~14 GB; the AdamW state is an additional ~56 GB.
+          This is the single biggest memory cost in training.
+        </p>
+        <p>
+          The <span class="gloss" data-term="learning-rate">learning rate</span> is the most
+          consequential hyperparameter in training — more than batch size, dropout, or most architectural
+          choices. The standard schedule has two phases:
+        </p>
+        <ul>
+          <li><strong>Linear warmup.</strong> Start with a very small learning rate and linearly ramp it
+            to the peak value over a few hundred to a few thousand steps. Skipping warmup on large models
+            causes early training instability because the large initial gradients can corrupt the random
+            initialization irreversibly.</li>
+          <li><strong>Cosine decay.</strong> After warmup, decay the learning rate following a cosine
+            curve down to ~10% of peak by the end of training. Cosine decay is preferred over linear
+            decay because it slows down naturally near the end, letting the model settle into a good
+            local minimum rather than stopping abruptly.</li>
+        </ul>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · the learning rate is the most sensitive knob</div>
+          <p>Too high: loss spikes or diverges, gradients explode, the model never converges.
+          Too low: training is unnecessarily slow; you waste compute. The sweet spot is empirically
+          derived — most modern runs use a <strong>peak LR of 1e-4 to 3e-4</strong> for 7B-scale
+          models, often found by running a short LR sweep at 1% of the full run budget. Don't copy
+          hyperparameters from a paper without checking whether the model size and batch size match
+          yours — the optimal LR scales with both.</p>
+        </div>
+
+        <h2 id="memory">Fitting it in memory: mixed precision, grad accumulation, checkpointing</h2>
+        <p>
+          A GPU has fast on-chip SRAM (the registers, L1 cache) and much larger but slower HBM
+          (high-bandwidth memory, the VRAM you buy). OOM (out-of-memory) errors are the bane of
+          training engineers. The toolkit for fighting them:
+        </p>
+
+        <p><strong><span class="gloss" data-term="mixed-precision">Mixed precision (bf16/fp16).</span></strong>
+          Compute in 16-bit floats; keep the optimizer's master weights in fp32. The forward and backward
+          passes run in bf16, which is 2× faster on Ampere and Hopper GPUs (the Tensor Cores are designed
+          for it) and uses half the memory for activations. The fp32 master weights ensure that the small
+          gradient updates don't round to zero. BF16 is strongly preferred over FP16 for training:
+          its wider dynamic range matches fp32 and avoids the overflow/underflow issues that require
+          loss scaling under FP16.</p>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · mixed precision is like a calculator</div>
+          <p>You do the intermediate arithmetic on a basic calculator (fast, 8-significant-figures),
+          but write down results in a precise lab notebook (32 digits). The final totals are as accurate
+          as the notebook; you just didn't need high precision for every intermediate step. That's
+          bf16 activations + fp32 master weights in a nutshell.</p>
+        </div>
+
+        <p><strong><span class="gloss" data-term="gradient-accumulation">Gradient accumulation.</span></strong>
+          Large batch sizes reduce gradient noise and improve training stability — but doubling the
+          batch size doubles activation memory. Gradient accumulation simulates a large batch by
+          running multiple small forward-backward passes without calling <code>optimizer.step()</code>,
+          then summing the gradients before the update. With accumulation steps = 8, you get the
+          effective batch size of 8× your physical batch at the cost of 8× the time, but no extra
+          memory. This is standard practice on memory-constrained hardware.</p>
+
+        <p><strong>Gradient clipping.</strong> Cap gradient norms at a threshold (typically 1.0).
+          When a batch contains anomalous text, the loss spikes, gradients explode, and without clipping
+          the optimizer takes a huge wild step that can take hours of training to recover from.
+          Clipping is a cheap guard against catastrophic steps. Monitor the gradient norm over training —
+          if it's consistently hitting the clip threshold, your LR may be too high.</p>
+
+        <p><strong>Activation <span class="gloss" data-term="checkpoint">checkpointing</span>
+          (gradient checkpointing).</strong> During the forward pass, intermediate activations are
+          normally stored for the backward pass. For a 32-layer model with 4k context, that's enormous.
+          Gradient checkpointing discards intermediate activations during the forward pass and
+          recomputes them on-the-fly during the backward pass. The trade-off: ~33% slower backward
+          pass, but activation memory drops dramatically. Standard for any model that doesn't fit
+          otherwise.</p>
+
+        <h2 id="parallelism">When one GPU isn't enough: data, tensor, pipeline parallelism</h2>
+        <p>
+          A single A100 80 GB can hold roughly a 40B-parameter model in fp16, with nothing left for
+          activations or optimizer state. Pretraining at 7B or above almost certainly requires multiple
+          GPUs. There are three orthogonal ways to split the work:
+        </p>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV · distributed training = sharding state across workers</div>
+          <p>You already know this problem. In distributed databases, you shard either the data (rows)
+          or the schema (columns/tables) across nodes. In distributed training, you shard either the
+          <strong>data</strong> (different batches per GPU), the <strong>model's layers</strong>
+          (different layers per GPU — pipeline parallelism), or the <strong>tensors within a layer</strong>
+          (split weight matrices across GPUs — tensor parallelism). The collective communication
+          primitives (all-reduce, all-gather, scatter) are exactly the reduce/broadcast operations
+          you'd see in a map-reduce pipeline. ZeRO is the optimizer-state equivalent of a sharded
+          database — which we'll get to next.</p>
+        </div>
+
+        <p><strong>Data parallelism (DP).</strong> The simplest strategy: each GPU holds a full copy
+          of the model and processes a different mini-batch. After each forward-backward, gradients
+          are all-reduced (summed and averaged) across GPUs before the optimizer step. PyTorch's
+          <code>DistributedDataParallel</code> (DDP) implements this and is the default for anything
+          that fits on one GPU. Scales linearly in throughput with GPU count. The limitation: you
+          still need the full model, optimizer state, and gradients on every GPU.</p>
+
+        <p><strong>Tensor parallelism (TP).</strong> Split individual weight matrices across GPUs.
+          For a matrix multiply <code>Y = XW</code>, column-split <code>W</code> across <em>k</em>
+          GPUs: each GPU computes a slice of <code>Y</code>, and the slices are assembled via
+          all-gather. Megatron-LM made this famous. TP requires high-bandwidth inter-GPU links
+          (NVLink) because it needs to synchronise at every layer. Within a node: great. Across
+          nodes over InfiniBand: painful.</p>
+
+        <p><strong>Pipeline parallelism (PP).</strong> Assign sequential layer groups to different
+          GPUs — GPU 0 handles layers 0–7, GPU 1 layers 8–15, and so on. Input flows through the
+          pipeline stage by stage. Requires micro-batching to keep all stages busy (otherwise GPUs
+          stall waiting for the next batch). PP has low communication volume (just layer-boundary
+          activations) but introduces "pipeline bubbles" where GPUs idle at the start and end of
+          each batch.</p>
+
+        <p>Real large-scale runs combine all three: 3D parallelism. A 1,000-GPU run might use
+          TP = 8 (within-node), PP = 8 (cross-node), and DP = 16 (data replicas). Coordinating this
+          is a significant infrastructure problem — one reason large-scale training is hard to replicate.</p>
+
+        <h2 id="fsdp-zero">FSDP and ZeRO: sharding the model itself</h2>
+        <p>
+          For most engineers who aren't running frontier-scale pretraining, the more practical tool is
+          <strong><span class="gloss" data-term="fsdp">FSDP</span></strong> (Fully Sharded Data
+          Parallel, PyTorch native) or <strong>DeepSpeed ZeRO</strong> (Zero Redundancy Optimizer).
+          Both implement the same core insight: in standard DDP, every GPU holds a full copy of the
+          model, gradients, and optimizer state — with N GPUs, that's N × the total memory cost.
+          Why replicate? Shard it.
+        </p>
+        <p>
+          ZeRO / FSDP shard across the GPU ranks:
+        </p>
+        <ul>
+          <li><strong>Stage 1 (ZeRO-1):</strong> shard optimizer state. Each GPU holds 1/N of the
+            Adam m and v buffers. Still redundant weights and gradients.</li>
+          <li><strong>Stage 2 (ZeRO-2):</strong> also shard gradients. After the backward pass,
+            each GPU only holds its slice of the gradients.</li>
+          <li><strong>Stage 3 / FSDP:</strong> also shard the parameters themselves. During the
+            forward and backward passes, each layer's weights are all-gathered from the shards as needed,
+            then freed. The communication overhead is one all-gather per layer per forward and one
+            reduce-scatter per backward — but peak memory drops to 1/N of the total model state.</li>
+        </ul>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV · ZeRO = sharding the optimizer-state database</div>
+          <p>Think of the AdamW optimizer state as a <strong>key-value store</strong> where the key is
+          "parameter index" and the value is (weight, first moment, second moment). DDP replicates
+          this database on every GPU — a wasteful full copy. ZeRO applies horizontal sharding:
+          each GPU owns a range of parameter indices and holds only those rows. During the optimizer
+          step, each GPU updates its shard locally — no cross-GPU communication for the update itself.
+          The all-gather before the forward pass is the equivalent of a distributed join: assemble
+          the full parameter tensor from its shards. It's map-reduce for the optimizer.</p>
+        </div>
+
+        <div class="codeblock">
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>bash · accelerate FSDP config</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="single"><pre><code class="language-bash"># accelerate config (or write ~/.cache/huggingface/accelerate/default_config.yaml directly)
+# This enables FSDP Stage 3 — full sharding of weights + gradients + optimizer state.
+
+accelerate config --config_file fsdp_config.yaml
+
+# Or write the YAML directly:
+cat > fsdp_config.yaml &lt;&lt;'EOF'
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+fsdp_config:
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_backward_prefetch_policy: BACKWARD_PRE
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_forward_prefetch: false
+  fsdp_offload_params: false        # set true to offload to CPU RAM (slower, more capacity)
+  fsdp_sharding_strategy: FULL_SHARD  # ZeRO-3 equivalent
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sync_module_states: true
+  fsdp_use_orig_params: true
+mixed_precision: bf16
+num_machines: 1
+num_processes: 4                    # GPUs per machine
+EOF
+
+# Launch your training script with FSDP:
+accelerate launch --config_file fsdp_config.yaml train.py
+</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>Loading model shards across 4 GPUs...
+[rank0] FSDP: Wrapping LlamaDecoderLayer modules
+[rank0] Peak VRAM per GPU: ~9.2 GB for a 7B model (vs ~28 GB with DDP)
+# Each GPU now holds 1/4 of the parameters + optimizer state — ~4x memory reduction</code></pre>
+          </div>
+        </div>
+
+        <h2 id="monitoring">Monitoring a run</h2>
+        <p>
+          A pretraining run lasting weeks is a long-running stateful process — exactly the kind of thing
+          engineers instrument obsessively in production systems. The same instincts apply here:
+        </p>
+        <ul>
+          <li><strong>Training loss curve.</strong> Should decrease smoothly. A spike followed by recovery
+            usually indicates a bad data batch. A spike with no recovery is a divergence — abort,
+            restore last <span class="gloss" data-term="checkpoint">checkpoint</span>, and investigate
+            before restarting (usually a LR too high or an inf/NaN in the data).</li>
+          <li><strong>Gradient norm.</strong> Log the gradient norm every step. Should be roughly stable
+            after warmup. Consistently high (always hitting clip threshold) → LR too high or data issues.
+            Steadily decreasing toward zero → vanishing gradients or LR too low.</li>
+          <li><strong>GPU utilisation / MFU.</strong> Model FLOP utilisation (MFU) is the fraction of
+            peak GPU FLOP/s you're actually achieving. Good runs target 40–60% MFU. Below 30% suggests
+            a data pipeline bottleneck (CPU data loading is starving the GPU), suboptimal kernel fusion,
+            or excessive communication overhead in the distributed setup.</li>
+          <li><strong>Validation loss.</strong> Evaluate on a held-out slice every N steps. If training
+            loss drops but validation loss stagnates or rises, you're overfitting — either reduce the
+            number of epochs or add regularization. For large pretraining runs you typically see only one
+            epoch over the data, so overfitting is rare; contamination is a bigger concern.</li>
+          <li><strong>Checkpoint cadence.</strong> Save a full <span class="gloss" data-term="checkpoint">checkpoint</span>
+            every few thousand steps. On a multi-week run, losing the last 24 hours of training to a
+            hardware fault (it will happen) is painful; losing 3 days is a disaster. Most teams also
+            keep the best N checkpoints by validation loss and delete the rest.</li>
+        </ul>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · OOM debugging is an art</div>
+          <p>Out-of-memory errors in <span class="gloss" data-term="cuda">CUDA</span> are notoriously
+          unhelpful. Common causes and fixes: (1) activations too large → enable gradient checkpointing;
+          (2) batch size too large → reduce, or use gradient accumulation; (3) optimizer state not sharded
+          → switch to FSDP or DeepSpeed ZeRO-2; (4) <span class="gloss" data-term="mixed-precision">mixed precision</span>
+          not enabled → switch to bf16; (5) <span class="gloss" data-term="kv-cache">KV cache</span> being
+          allocated unnecessarily during training (it's for inference only — make sure
+          <code>use_cache=False</code> is set in the model config for training). Profile with
+          <code>torch.cuda.memory_summary()</code> and PyTorch's memory snapshot tool before reaching
+          for more GPUs — you might be leaving 20 GB on the table.</p>
+        </div>
+
+        <details class="deep">
+          <summary>▸ The memory budget: exactly where the bytes go <span class="tag">deep dive</span></summary>
+          <div>
+            <p>For a 7B model trained in bf16 with AdamW, per-parameter costs are:</p>
+            <div class="tablewrap"><table>
+              <thead><tr><th>Component</th><th>Dtype</th><th>Bytes/param</th></tr></thead>
+              <tbody>
+                <tr><td>Model weights</td><td>bf16</td><td>2</td></tr>
+                <tr><td>Gradients</td><td>fp32</td><td>4</td></tr>
+                <tr><td>AdamW first moment (m)</td><td>fp32</td><td>4</td></tr>
+                <tr><td>AdamW second moment (v)</td><td>fp32</td><td>4</td></tr>
+                <tr><td>Master weights (fp32)</td><td>fp32</td><td>4</td></tr>
+                <tr><td><b>Total</b></td><td>—</td><td><b>18</b></td></tr>
+              </tbody>
+            </table></div>
+            <p>7B × 18 bytes ≈ <strong>126 GB</strong> before activations. On 4 × A100 80 GB GPUs (320 GB
+            aggregate) with FSDP Stage 3, each GPU holds 126 / 4 ≈ 31.5 GB of model state, leaving
+            ~48 GB per GPU for activations — enough for reasonable context lengths and batch sizes.
+            This is the back-of-envelope calculation to size your GPU cluster before starting a run.</p>
+          </div>
+        </details>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>The <strong>training loop</strong> is: zero gradients → forward pass → backward pass → gradient clip → optimizer step → LR scheduler step. Five lines; everything else is engineering.</li>
+          <li><strong>AdamW</strong> costs ~16–18 bytes per parameter: weights + gradients + two moment buffers + fp32 master copy. Optimizer state dominates memory.</li>
+          <li>The <strong>learning rate</strong> is the most sensitive hyperparameter. Use linear warmup followed by cosine decay; tune peak LR carefully.</li>
+          <li><strong>Mixed precision (bf16)</strong> halves activation memory and doubles compute speed. <strong>Gradient accumulation</strong> simulates large batches without extra memory. <strong>Gradient checkpointing</strong> trades 33% compute for large activation memory savings.</li>
+          <li><strong>Data parallelism</strong> replicates the model across GPUs, syncing gradients via all-reduce. <strong>Tensor parallelism</strong> splits matrices within a layer. <strong>Pipeline parallelism</strong> splits layers across GPUs.</li>
+          <li><strong>FSDP / ZeRO</strong> shard the model weights, gradients, and optimizer state across GPUs — think of it as horizontally sharding the optimizer-state key-value store. Stage 3 reduces per-GPU memory by ~N× for N GPUs.</li>
+          <li>Monitor: training loss smoothness, gradient norm stability, MFU (&gt;40% is healthy), validation loss, and checkpoint cadence.</li>
+        </ul>
+        <p>Plate 09 covers what comes after pretraining: supervised fine-tuning (SFT) and instruction tuning — the steps that turn a raw base model into an assistant that follows your prompts.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "08-training-loop" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

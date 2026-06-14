@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 13 · Quantization &amp; GGUF — The Field Guide to LLMs</title>
+  <meta name="description" content="Shrinking models with lower numeric precision: fp16, int8, int4, GPTQ, AWQ, and the GGUF/llama.cpp k-quants that run LLMs on laptops.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 13 · Part V — Efficient &amp; Deployable</div>
+          <h1>Quantization &amp; GGUF</h1>
+          <p class="standfirst">A 70B model in full precision is ~140 GB — it won't fit anywhere cheap. Quantization stores the weights at lower numeric precision, trading a sliver of quality for a 4× shrink. It's the reason a capable LLM now runs on your laptop.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 17 min</span>
+            <span><b>Prereqs</b> · Plate 06</span>
+            <span><b>Code</b> · bitsandbytes · llama.cpp · Ollama</span>
+            <span><b>Widget</b> · Quantization explorer</span>
+          </div>
+        </div>
+
+        <h2 id="why">The memory wall</h2>
+        <p>
+          A model's weights are numbers, and numbers take space. In <code>fp32</code> (32-bit float) each
+          <span class="gloss" data-term="parameter">parameter</span> is 4 bytes; in <code>fp16</code>, 2 bytes. Inference is
+          almost entirely <em>memory-bandwidth-bound</em> — the GPU spends its time hauling weights from memory, not doing
+          math — so smaller weights mean both a smaller footprint <strong>and</strong> faster generation. That's the double win.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · lowering the bit-depth of an image</div>
+          <p><span class="gloss" data-term="quantization">Quantization</span> is lossy compression for weights. Like saving a
+          photo as an 8-bit PNG instead of 16-bit, or an MP3 instead of WAV: you map a fine-grained range onto a coarser set
+          of levels. Done well, the eye (or here, the model's output) barely notices. Done too aggressively, artifacts appear.</p>
+        </div>
+
+        <h2 id="formats">The numeric formats, from big to small</h2>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Format</th><th>Bytes/param</th><th>8B model</th><th>Used for</th></tr></thead>
+            <tbody>
+              <tr><td><code>fp32</code></td><td>4</td><td>~32 GB</td><td>Rare now; legacy / some training math</td></tr>
+              <tr><td><code>fp16 / bf16</code></td><td>2</td><td>~16 GB</td><td>The training &amp; full-precision baseline</td></tr>
+              <tr><td><code>int8</code></td><td>1</td><td>~8 GB</td><td>Near-lossless inference</td></tr>
+              <tr><td><code>int4</code></td><td>0.5</td><td>~4 GB</td><td>The popular size/quality sweet spot</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · fp16 vs bf16 are not the same 16 bits</div>
+          <p>Both are 2 bytes, but they split those bits differently. <code>fp16</code> spends more bits on precision and
+          fewer on range; <code>bf16</code> (brain-float) keeps <code>fp32</code>'s full <em>range</em> with less precision.
+          Training likes bf16's range (gradients vary wildly and rarely overflow). It's a classic engineering trade: dynamic
+          range vs. granularity.</p>
+        </div>
+
+        <p>Play with the tradeoff. Notice the cliff: from fp16 down to ~4 bits, quality holds remarkably well; below that it
+          falls off fast while the size barely improves. There's a clear sweet spot.</p>
+
+        <div id="quant-widget"></div>
+
+        <h2 id="ptq">Doing it well: outliers and smart quantization</h2>
+        <p>
+          Naive rounding to int4 wrecks quality, because a few weights have outsized magnitudes ("outliers") that, when
+          squashed, distort everything. The research that made low-bit LLMs practical is mostly about handling those outliers:
+        </p>
+        <ul>
+          <li><strong>LLM.int8()</strong><a class="cite" data-ref="dettmers2022"></a> — keep the rare outlier dimensions in
+            16-bit and quantize the rest to int8. Near-lossless 8-bit, and the foundation of the <code>bitsandbytes</code> library.</li>
+          <li><strong>GPTQ</strong><a class="cite" data-ref="frantar2022"></a> — a one-shot, layer-by-layer method that
+            compensates for the error each quantization step introduces. Fast 3–4 bit weights for GPU inference.</li>
+          <li><strong>AWQ</strong><a class="cite" data-ref="lin2023"></a> — "activation-aware": identify the small fraction
+            of weights that matter most (judged by activation magnitudes) and protect them. Strong 4-bit quality and speed.</li>
+        </ul>
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>These are <strong>codecs</strong>. Just as H.264 and AV1 are different algorithms for compressing the same video
+          with different quality/speed/size tradeoffs, GPTQ, AWQ, and the GGUF k-quants are different weight codecs. You pick
+          one based on your runtime (GPU vs CPU) and your tolerance for the size/quality knob.</p>
+        </div>
+
+        <h2 id="gguf">GGUF, llama.cpp, and the laptop revolution</h2>
+        <p>
+          On the CPU/consumer side, one project changed the game: <span class="gloss" data-term="llama-cpp">llama.cpp</span>,
+          a C/C++ engine that runs quantized models efficiently on ordinary hardware — including Apple Silicon via Metal. Its
+          model format is <span class="gloss" data-term="gguf">GGUF</span>: a single file bundling the quantized weights, the
+          tokenizer, and metadata.
+        </p>
+        <p>
+          GGUF's "<strong>k-quant</strong>" levels are the names you'll see everywhere — <code>Q4_K_M</code>, <code>Q5_K_M</code>,
+          <code>Q8_0</code>, <code>Q2_K</code>. The number is roughly the bits per weight; <code>K</code> means a smarter
+          mixed-precision scheme; <code>_M</code> / <code>_S</code> are medium/small variants. <strong>Q4_K_M</strong> is the
+          community default — about a quarter of the size of fp16 with quality almost indistinguishable in practice.
+          <span class="gloss" data-term="ollama">Ollama</span> wraps all of this so <code>ollama run llama3.2</code> just works.
+        </p>
+
+        <h2 id="hands-on">Hands-on: run a quantized model</h2>
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · load a quantized model</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · Mac (GGUF)</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA (4-bit)</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># Easiest path on a Mac — Ollama pulls a Q4_K_M GGUF automatically:
+#   brew install ollama
+#   ollama run llama3.2            # chat right in the terminal
+
+# Or drive a GGUF directly from Python (CPU / Apple Metal):
+# pip install llama-cpp-python
+from llama_cpp import Llama
+
+llm = Llama.from_pretrained(
+    repo_id="bartowski/Llama-3.2-3B-Instruct-GGUF",
+    filename="*Q4_K_M.gguf",          # the sweet-spot quant
+    n_ctx=4096,
+)
+out = llm("Q: Why is the sky blue?\nA:", max_tokens=64)
+print(out["choices"][0]["text"].strip())</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install torch transformers bitsandbytes accelerate
+# Load an 8B model in 4-bit on an NVIDIA GPU — ~6 GB instead of ~16 GB.
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+bnb = BitsAndBytesConfig(
+    load_in_4bit=True, bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16,
+)
+name = "meta-llama/Llama-3.1-8B-Instruct"
+tok   = AutoTokenizer.from_pretrained(name)
+model = AutoModelForCausalLM.from_pretrained(name, quantization_config=bnb, device_map="auto")
+
+msgs = [{"role": "user", "content": "Why is the sky blue?"}]
+inputs = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt").to(model.device)
+print(tok.decode(model.generate(inputs, max_new_tokens=64)[0], skip_special_tokens=True))</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>The sky is blue because of Rayleigh scattering: air molecules scatter
+shorter (blue) wavelengths of sunlight more than longer (red) ones...
+# A 3B Q4_K_M model produces this on a laptop, using ~2 GB of RAM.</code></pre>
+          </div>
+        </div>
+
+        <div class="callout callout--fail">
+          <div class="callout__tag">What breaks — and when</div>
+          <p>Below ~3 bits (e.g. <code>Q2_K</code>), quality degrades sharply: the model gets repetitive, loses instruction
+          following, and hallucinates more. And quantization compounds with everything else — a heavily quantized <em>and</em>
+          aggressively pruned <em>and</em> tiny model is often worse than a smaller model at a higher precision. Prefer a
+          smaller model at Q4_K_M over a bigger one at Q2.</p>
+        </div>
+
+        <div class="callout callout--paper">
+          <div class="callout__tag">Key papers</div>
+          <div class="ref-card">
+            <span class="yr">2022–23</span>
+            <div><cite>LLM.int8() · GPTQ · AWQ</cite>
+              <span class="auth">Dettmers; Frantar et&nbsp;al.; Lin et&nbsp;al.</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">The trio that made accurate low-bit inference real.
+              <a href="../references.html#ref-29">See references&nbsp;[29]</a>, <a href="../references.html#ref-30">[30]</a>,
+              <a href="../references.html#ref-37">[37] →</a></p>
+            </div>
+          </div>
+        </div>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>Quantization stores weights at lower precision — a lossy codec that shrinks models ~4× and speeds up memory-bound inference.</li>
+          <li><code>fp16/bf16</code> → <code>int8</code> → <code>int4</code>: quality holds well down to ~4 bits, then falls off a cliff.</li>
+          <li>Good methods (<strong>LLM.int8, GPTQ, AWQ</strong>) work by protecting outlier weights.</li>
+          <li><strong>GGUF + llama.cpp</strong> (and Ollama) brought quantized models to laptops; <strong>Q4_K_M</strong> is the default sweet spot.</li>
+          <li>Rule of thumb: a smaller model at Q4_K_M usually beats a larger model crushed to Q2.</li>
+        </ul>
+        <p>A small, fast model is only useful if you can serve it well. Next: inference and serving — KV caches, batching, and the engines that make it fly.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "13-quantization" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+  <script src="../assets/js/widgets/quantization.js"></script>
+  <script>document.addEventListener("DOMContentLoaded", function(){ FGQuant.mount("#quant-widget"); });</script>
+</body>
+</html>

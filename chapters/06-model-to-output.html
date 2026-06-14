@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 06 · From Weights to Words — The Field Guide to LLMs</title>
+  <meta name="description" content="What '7B parameters' actually counts, how the forward pass turns tokens into logits, and the sampling knobs — temperature, top-k, top-p — that decide what the model says.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 06 · Part II — How LLMs Work</div>
+          <h1>From Weights to Words</h1>
+          <p class="standfirst">A model file is just numbers — billions of floating-point values sitting on disk. This plate traces the path from those static weights all the way to the word that appears on your screen: the forward pass, the probability distribution, and the sampling knobs that tune creativity vs. predictability.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 18 min</span>
+            <span><b>Prereqs</b> · Plate 05</span>
+            <span><b>Code</b> · PyTorch · transformers</span>
+          </div>
+        </div>
+
+        <h2 id="what-7b-counts">What "7B parameters" actually counts</h2>
+        <p>
+          When someone says a model has "7 billion parameters," what are they actually counting?
+          A <span class="gloss" data-term="parameter">parameter</span> is simply a single floating-point number
+          in a weight matrix — the model's only persistent state between runs. Everything the model "knows"
+          lives in these numbers. During training they are nudged by gradient descent; during inference they
+          are frozen.
+        </p>
+        <p>
+          The bulk of those 7B live in three places per Transformer block, repeated across <em>N</em> layers:
+        </p>
+        <ul>
+          <li><strong>Attention matrices.</strong> Each layer has Q, K, V, and output projection matrices.
+            For a model with hidden dimension <code>d_model = 4096</code> and <code>num_heads = 32</code>,
+            each projection is 4096 × 4096 = ~16.8 M parameters. Four projections per layer × 32 layers = ~2.1 B from attention alone.</li>
+          <li><strong>Feed-forward network (FFN).</strong> The FFN typically expands to 4 × d_model then
+            contracts back. For d_model = 4096 that's two matrices of 4096 × 16384 each — roughly 134 M per layer,
+            or ~4.3 B across 32 layers. The FFN is the heavyweight.</li>
+          <li><strong>Embedding + unembedding.</strong> A vocabulary of ~32,000 tokens × 4096 dims = ~131 M
+            parameters. These are shared (tied weights) in many models: the same matrix is used to look up
+            input <span class="gloss" data-term="embedding">embeddings</span> and to project the final
+            layer back to vocabulary scores.</li>
+        </ul>
+        <p>
+          Add layer norms (tiny), positional encodings (often zero extra params with RoPE), and you land right
+          around 7 B. The "7B" label is therefore a rough proxy for how much GPU RAM you need, how long inference
+          takes, and how much the model "knows" — but the FFN is where most of that capacity actually lives.
+        </p>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>Think of the model file as a <strong>compiled binary</strong>: an enormous read-only blob of
+          floats with a well-known layout (layer 0 attention weights at offset X, FFN at offset Y, …).
+          The forward pass is a <strong>streaming computation</strong> over that blob — nothing is mutated,
+          no heap allocation per request (ignoring the KV cache). Scaling a model means a bigger binary;
+          <span class="gloss" data-term="inference">inference</span> is the "run" step that interprets it.</p>
+        </div>
+
+        <h2 id="forward-pass">The forward pass, end to end</h2>
+        <p>
+          You type a prompt. The tokenizer converts it to a sequence of integer IDs. From there, the forward
+          pass is a single, deterministic data-flow computation through the frozen weights:
+        </p>
+        <ol>
+          <li><strong>Token → embedding.</strong> Each integer ID is used to look up a row in the embedding
+            matrix — a learned dense vector of length <code>d_model</code>. The sequence becomes a matrix
+            of shape <code>(seq_len, d_model)</code>.</li>
+          <li><strong>N Transformer blocks.</strong> Each block runs multi-head self-attention (all tokens
+            talk to each other) followed by a per-token FFN, both wrapped with residual connections and
+            LayerNorm. Information is mixed and refined at each layer. The shape stays
+            <code>(seq_len, d_model)</code> all the way through.</li>
+          <li><strong>Final norm.</strong> A single LayerNorm after the last block stabilizes the magnitudes
+            before the final projection.</li>
+          <li><strong>Unembedding (the "language model head").</strong> The last token's hidden state — a
+            single vector of length <code>d_model</code> — is multiplied by the unembedding matrix
+            (<code>d_model × vocab_size</code>), yielding a vector of length <code>vocab_size</code>.
+            These raw scores are called <span class="gloss" data-term="logits">logits</span>.</li>
+        </ol>
+        <p>
+          That's it. The entire forward pass is matrix multiplications and element-wise operations. No loops,
+          no branching on content — just a big, parallelisable computation graph that a GPU can run at
+          thousands of tokens per second.
+        </p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 520 220" role="img" aria-label="Forward pass from token IDs to logits">
+            <defs>
+              <marker id="ar6" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                <path d="M0 0 L8 4 L0 8 z" fill="var(--text-3)"/>
+              </marker>
+            </defs>
+            <style>
+              .b6{fill:var(--paper-3);stroke:var(--line-2);stroke-width:1.4}
+              .a6{fill:var(--accent-soft);stroke:var(--accent)}
+              .l6{font-family:var(--font-ui);font-size:12px;fill:var(--text)}
+              .s6{font-family:var(--font-mono);font-size:10px;fill:var(--text-3)}
+              .f6{stroke:var(--text-3);stroke-width:1.5;fill:none;marker-end:url(#ar6)}
+            </style>
+            <!-- boxes -->
+            <rect x="10"  y="88" width="80"  height="44" rx="6" class="b6"/>
+            <text x="50"  y="107" text-anchor="middle" class="l6">Token IDs</text>
+            <text x="50"  y="121" text-anchor="middle" class="s6">[42, 318, …]</text>
+            <line x1="90" y1="110" x2="110" y2="110" class="f6"/>
+
+            <rect x="110" y="88" width="88"  height="44" rx="6" class="a6"/>
+            <text x="154" y="107" text-anchor="middle" class="l6">Embed</text>
+            <text x="154" y="121" text-anchor="middle" class="s6">(seq, d_model)</text>
+            <line x1="198" y1="110" x2="218" y2="110" class="f6"/>
+
+            <rect x="218" y="70" width="100" height="80"  rx="6" class="b6"/>
+            <text x="268" y="97"  text-anchor="middle" class="l6">N × Block</text>
+            <text x="268" y="112" text-anchor="middle" class="s6">Attn + FFN</text>
+            <text x="268" y="127" text-anchor="middle" class="s6">+ Residual</text>
+            <text x="268" y="142" text-anchor="middle" class="s6">(seq, d_model)</text>
+            <line x1="318" y1="110" x2="338" y2="110" class="f6"/>
+
+            <rect x="338" y="88" width="72"  height="44" rx="6" class="b6"/>
+            <text x="374" y="107" text-anchor="middle" class="l6">Norm</text>
+            <text x="374" y="121" text-anchor="middle" class="s6">last token</text>
+            <line x1="410" y1="110" x2="430" y2="110" class="f6"/>
+
+            <rect x="430" y="88" width="82"  height="44" rx="6" class="a6"/>
+            <text x="471" y="107" text-anchor="middle" class="l6">Unembed</text>
+            <text x="471" y="121" text-anchor="middle" class="s6">(vocab_size,)</text>
+
+            <!-- label above -->
+            <text x="471" y="75" text-anchor="middle" class="s6">logits</text>
+            <line x1="471" y1="78" x2="471" y2="88" class="f6"/>
+          </svg>
+          <figcaption><b>The forward pass in one picture.</b> Token IDs → embedding lookup → N Transformer
+            blocks → final norm → unembedding → logits. Only the last token's logits are needed to pick
+            the next word.</figcaption>
+        </figure>
+
+        <p>
+          Note a subtle but important point: only the <em>last</em> token's logit vector matters for
+          generation. The earlier tokens produce hidden states used by later tokens via attention — they
+          do real work — but we only read out the top of the stack for the rightmost position.
+          This is why the <span class="gloss" data-term="kv-cache">KV cache</span> is so valuable:
+          for tokens we've already processed, we can skip recomputing their attention keys and values
+          and reuse the cached versions from previous steps.
+        </p>
+
+        <h2 id="logits-to-probs">From logits to a probability distribution</h2>
+        <p>
+          The logit vector has one raw score per vocabulary token — 32,000 numbers for Llama-style models.
+          These scores are not probabilities; they're unbounded and can be negative. We turn them into a
+          proper probability distribution with <span class="gloss" data-term="softmax">softmax</span>:
+        </p>
+        <p style="font-family:var(--font-mono);text-align:center;font-size:1.05rem;color:var(--accent-deep)">
+          P(token<sub>i</sub>) = exp(z<sub>i</sub>) / Σ<sub>j</sub> exp(z<sub>j</sub>)
+        </p>
+        <p>
+          Softmax does two things: it exponentiates (making all values positive and amplifying differences)
+          and normalises (so values sum to 1). The result is a valid probability distribution — the model's
+          belief about which token comes next, given the entire context so far.
+        </p>
+        <p>
+          A useful mental model: the logits are scores on an exam; softmax is the grade curve that converts
+          them into percentages. A score 3 points above the mean isn't just "a bit better" — exponentiation
+          makes it <em>e³ ≈ 20×</em> more probable. That sensitivity is exactly what makes <span class="gloss" data-term="temperature">temperature</span>
+          scaling so powerful, as we'll see next.
+        </p>
+
+        <h2 id="decoding">Choosing the next token: greedy, temperature, top-k, top-p</h2>
+        <p>
+          With a probability distribution in hand, the model must <em>sample</em> from it — or skip sampling
+          and just take the peak. This is the decoding strategy, and it has more effect on perceived quality
+          and creativity than almost anything else an engineer controls.
+        </p>
+
+        <p><strong>Greedy decoding</strong> always picks the argmax — the single highest-probability token.
+          Fast, deterministic, and surprisingly bad for open-ended generation: it leads the model into
+          repetition loops and "safe" but boring outputs because it never explores lower-probability options
+          that might open up richer continuations.</p>
+
+        <p><strong>Temperature</strong> is a scalar applied to logits <em>before</em> softmax:
+          <code>P = softmax(z / T)</code>. At <code>T = 1.0</code> (the default), you get the raw
+          distribution. At <code>T &lt; 1.0</code> (e.g. 0.3), differences are amplified — the
+          distribution sharpens and the model becomes more confident and predictable. At
+          <code>T &gt; 1.0</code> (e.g. 1.5), differences are compressed — the distribution flattens and
+          low-probability tokens get a bigger share. Higher temperature = more varied, more surprising,
+          sometimes more creative, sometimes more nonsensical.</p>
+
+        <p><strong><span class="gloss" data-term="top-k">Top-k</span></strong> is a hard truncation:
+          zero out all but the top <em>k</em> logits before softmax. This prevents any truly bizarre
+          low-probability tokens from sneaking through, regardless of temperature. A typical value is
+          <code>k = 50</code>. The downside: the right <em>k</em> varies wildly by position — sometimes
+          the distribution is genuinely flat across 1000 plausible tokens; sometimes only 3 are reasonable.</p>
+
+        <p><strong><span class="gloss" data-term="top-p">Top-p (nucleus sampling)</span></strong><a class="cite" data-ref="brown2020"></a>
+          is adaptive: keep the smallest set of tokens whose cumulative probability exceeds threshold
+          <em>p</em>. With <code>p = 0.9</code>, on a "flat" step you keep many tokens; on a "certain"
+          step you might keep just 2. Nucleus sampling self-tunes to the model's current uncertainty —
+          and is why "top-p = 0.9, temperature = 0.8" is the default recipe for most chat models.</p>
+
+        <p><strong>Repetition penalty</strong> divides logits of recently seen tokens by a penalty scalar
+          (&gt; 1.0), reducing their probability. It's a band-aid for repetition loops, not a cure — but
+          it works well enough to be standard.</p>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · weighted dice</div>
+          <p>The model computes a probability distribution. Picking the next token is literally rolling a
+          <strong>loaded die</strong> with 32,000 faces. Temperature adjusts how loaded it is: cold (low T)
+          makes the die almost always land on the same face; hot (high T) makes every face nearly equally
+          likely. Top-k and top-p tape over the faces that are too unlikely before you roll — they
+          constrain the sample space without changing which faces remain.</p>
+        </div>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · temperature 0 ≈ greedy, but not truly deterministic</div>
+          <p>Setting <code>temperature=0</code> is supposed to give you determinism. In practice, most
+          frameworks implement it as greedy (argmax), which <em>is</em> deterministic for a given model
+          on a given device. But floating-point non-associativity across GPU kernels, quantization, and
+          non-deterministic CUDA ops mean that the same prompt on different hardware — or even different
+          runs on the same hardware with <code>CUDA_LAUNCH_BLOCKING=1</code> not set — can yield different
+          results. True reproducibility requires a fixed seed <em>and</em> deterministic ops <em>and</em>
+          identical hardware/software. In production, treat LLM output as non-deterministic by default.</p>
+        </div>
+
+        <p>Here's a from-scratch illustration of sampling on a small logit vector:</p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · softmax + sampling from scratch</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="single"><pre><code class="language-python">import torch
+import torch.nn.functional as F
+
+# Tiny example: 8 vocab tokens with raw logit scores
+logits = torch.tensor([1.2, 0.8, 3.1, -0.5, 2.4, 0.1, -1.0, 1.8])
+vocab  = ["the", "a", "cat", "dog", "sat", "ran", "over", "mat"]
+
+def sample_next_token(logits, temperature=1.0, top_p=0.9, top_k=0):
+    # 1. Temperature scaling
+    logits = logits / max(temperature, 1e-6)
+
+    # 2. Optional top-k hard truncation
+    if top_k > 0:
+        kth_val = torch.topk(logits, top_k).values[-1]
+        logits = logits.masked_fill(logits < kth_val, float("-inf"))
+
+    # 3. Softmax → probability distribution
+    probs = F.softmax(logits, dim=-1)
+
+    # 4. Top-p nucleus: keep smallest set summing to >= top_p
+    if top_p < 1.0:
+        sorted_probs, sorted_idx = torch.sort(probs, descending=True)
+        cumulative = torch.cumsum(sorted_probs, dim=-1)
+        # remove tokens once cumulative prob exceeds top_p
+        remove = cumulative - sorted_probs > top_p
+        sorted_probs[remove] = 0.0
+        # renormalise
+        sorted_probs /= sorted_probs.sum()
+        # sample from the truncated distribution
+        chosen = torch.multinomial(sorted_probs, 1)
+        return sorted_idx[chosen].item()
+
+    return torch.multinomial(probs, 1).item()
+
+# Greedy (effectively temperature=0)
+greedy = logits.argmax().item()
+print(f"Greedy:            '{vocab[greedy]}'")  # always the argmax
+
+# Temperature 0.5 — sharper, more predictable
+torch.manual_seed(42)
+idx05 = sample_next_token(logits, temperature=0.5, top_p=0.9)
+print(f"T=0.5, top-p=0.9:  '{vocab[idx05]}'")
+
+# Temperature 1.5 — flatter, more varied
+torch.manual_seed(42)
+idx15 = sample_next_token(logits, temperature=1.5, top_p=0.9)
+print(f"T=1.5, top-p=0.9:  '{vocab[idx15]}'")
+</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>Greedy:            'cat'       # token index 2, highest raw logit (3.1)
+T=0.5, top-p=0.9:  'cat'       # still usually 'cat' — cold distribution is peaky
+T=1.5, top-p=0.9:  'sat'       # temperature flattened the distribution; 'sat' won the roll</code></pre>
+          </div>
+        </div>
+
+        <h2 id="autoregressive-loop">The autoregressive loop</h2>
+        <p>
+          The model doesn't generate the full response in one shot. It generates <em>one</em> token, then
+          feeds that token back as part of the new input, then generates the next token, and so on.
+          This is the <span class="gloss" data-term="autoregressive">autoregressive</span> loop — the
+          fundamental reason LLM generation is sequential and why latency scales with output length.
+        </p>
+        <p>
+          Concretely: at step <em>t</em>, the input sequence is [prompt tokens + token_1 + … + token_{t-1}].
+          The model runs the full forward pass and reads the logits at position <em>t</em>. We sample
+          token_t, append it to the context, and repeat. The <span class="gloss" data-term="context-window">context window</span>
+          grows by one token per step until we hit a stop token (<code>&lt;|eos|&gt;</code>) or the
+          maximum length.
+        </p>
+        <p>
+          The KV cache is what makes this tractable. Without it, each step would recompute attention over
+          the entire sequence — O(n²) work per step, O(n³) total. With the <span class="gloss" data-term="kv-cache">KV cache</span>,
+          we store the key and value vectors from previous steps and only compute attention for the new
+          token, reducing each step to roughly O(n) — a table lookup into the cached keys and values.
+        </p>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV · it's a REPL with state</div>
+          <p>The autoregressive loop is structurally identical to a <strong>REPL</strong> (Read-Eval-Print
+          Loop) where the "eval" step is the forward pass, the "print" appends one token to the buffer, and
+          the "read" re-ingests the whole buffer. The KV cache is the memoisation layer that avoids
+          recomputing intermediate results for the prefix you've already seen — exactly like a dynamic
+          programming table or an HTTP response cache keyed on the request prefix.</p>
+        </div>
+
+        <p>Here's the full generation loop using Hugging Face <code>transformers</code>, with the Local/Cloud tab showing how to vary sampling parameters:</p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · model.generate with sampling</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · Mac/MPS</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install torch transformers
+# Runs on Apple Silicon (MPS) or CPU — uses a small model for speed.
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+device = "mps" if torch.backends.mps.is_available() else "cpu"
+model_id = "HuggingFaceTB/SmolLM2-135M-Instruct"
+tok   = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float16).to(device)
+
+prompt = "The three most important things a software engineer should know about LLMs are"
+inputs = tok(prompt, return_tensors="pt").to(device)
+
+# ---- Greedy (deterministic) ----
+greedy = model.generate(**inputs, max_new_tokens=40, do_sample=False)
+print("=== Greedy ===")
+print(tok.decode(greedy[0], skip_special_tokens=True))
+
+# ---- Temperature + top-p (creative) ----
+sampled = model.generate(
+    **inputs, max_new_tokens=40, do_sample=True,
+    temperature=0.8, top_p=0.9, repetition_penalty=1.1,
+)
+print("\n=== Sampled (T=0.8, top-p=0.9) ===")
+print(tok.decode(sampled[0], skip_special_tokens=True))
+</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install torch transformers accelerate
+# Runs on an NVIDIA GPU (Colab T4 works). Uses Llama-3.2-3B-Instruct.
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model_id = "meta-llama/Llama-3.2-3B-Instruct"
+tok   = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(
+    model_id, torch_dtype=torch.bfloat16, device_map="auto"
+)
+
+prompt = "The three most important things a software engineer should know about LLMs are"
+inputs = tok(prompt, return_tensors="pt").to(model.device)
+
+# ---- Greedy ----
+greedy = model.generate(**inputs, max_new_tokens=60, do_sample=False)
+print("=== Greedy ===")
+print(tok.decode(greedy[0], skip_special_tokens=True))
+
+# ---- Nucleus sampling ----
+sampled = model.generate(
+    **inputs, max_new_tokens=60, do_sample=True,
+    temperature=0.8, top_p=0.9, repetition_penalty=1.1,
+)
+print("\n=== Sampled (T=0.8, top-p=0.9) ===")
+print(tok.decode(sampled[0], skip_special_tokens=True))
+
+# ---- Low temperature — precise and conservative ----
+precise = model.generate(
+    **inputs, max_new_tokens=60, do_sample=True,
+    temperature=0.2, top_p=0.95,
+)
+print("\n=== Precise (T=0.2, top-p=0.95) ===")
+print(tok.decode(precise[0], skip_special_tokens=True))
+</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output (approximate — varies by model and hardware)</span></div>
+            <pre><code>=== Greedy ===
+The three most important things a software engineer should know about LLMs are
+1. they are probabilistic, 2. context is everything, 3. they hallucinate.
+
+=== Sampled (T=0.8, top-p=0.9) ===
+The three most important things a software engineer should know about LLMs are
+their stochastic nature, the importance of prompt engineering, and how to
+evaluate output quality reliably.
+# ^ different wording each run — same underlying knowledge, different surface form</code></pre>
+          </div>
+        </div>
+
+        <h2 id="why-outputs-vary">Why outputs vary — and how to get determinism</h2>
+        <p>
+          The most common question engineers ask when first integrating an LLM API: "Why does this
+          endpoint return different answers every time I call it with the same prompt?" The answer is
+          now obvious: sampling is probabilistic. The model computes the same deterministic forward pass
+          and lands on the same distribution — but then <em>rolls the dice</em>. Different rolls, different
+          tokens, different outputs<a class="cite" data-ref="brown2020"></a>.
+        </p>
+        <p>
+          This variance is a feature for creative tasks and a bug for structured extraction. Here's
+          the toolkit:
+        </p>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Goal</th><th>Setting</th><th>Trade-off</th></tr></thead>
+            <tbody>
+              <tr><td>Determinism / reproducibility</td><td><code>temperature=0</code> (greedy); set <code>seed</code></td><td>Boring, repetitive; hardware-dependent in practice</td></tr>
+              <tr><td>Precise / factual output</td><td><code>temperature=0.1–0.3</code>, <code>top_p=0.95</code></td><td>Low variance, less creative</td></tr>
+              <tr><td>Balanced quality</td><td><code>temperature=0.7–0.9</code>, <code>top_p=0.9</code></td><td>Default for most chat APIs</td></tr>
+              <tr><td>Creative / brainstorming</td><td><code>temperature=1.0–1.3</code>, <code>top_p=0.95</code></td><td>Varied, occasionally incoherent</td></tr>
+              <tr><td>Structured JSON output</td><td>Constrained decoding / grammar sampling</td><td>Guaranteed schema; slight quality cost</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The <span class="gloss" data-term="autoregressive">autoregressive</span> nature also means
+          early randomness compounds: a surprising first word steers the model into a different region
+          of probability space, producing a chain of choices that diverges completely from another run.
+          This is why two runs at <code>temperature=0.8</code> can produce answers that look like
+          they came from different models.
+        </p>
+        <p>
+          For most production systems the practical answer is: accept stochasticity, test with a
+          distribution of outputs, and use structured output constraints (<span class="gloss" data-term="structured-output">structured output</span>)
+          when you need a schema. Reserve temperature 0 for cases where you genuinely need the same
+          string every time — and even then, document the hardware dependency.
+        </p>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li>A "7B model" has ~7 B floating-point <strong>parameters</strong> split mainly between attention matrices and FFN matrices across N layers, plus the embedding/unembedding tables.</li>
+          <li>The <strong>forward pass</strong> is: token IDs → embedding lookup → N Transformer blocks → final norm → unembedding → logits (one score per vocab token).</li>
+          <li><strong>Softmax</strong> converts unbounded logits into a probability distribution; the sensitivity to score differences is exponential.</li>
+          <li><strong>Temperature</strong> sharpens (low) or flattens (high) the distribution before softmax. <strong>Top-k</strong> hard-truncates; <strong>top-p (nucleus)</strong> adapts the cutoff to the model's current uncertainty.</li>
+          <li>The <strong>autoregressive loop</strong> generates one token at a time, feeds it back in, and uses the <strong>KV cache</strong> to avoid recomputing all prior attention states.</li>
+          <li>Output variance is a direct consequence of probabilistic sampling — not a bug. Temperature 0 gives near-determinism but depends on hardware.</li>
+        </ul>
+        <p>Plate 07 goes upstream: how were those 7 B parameters set in the first place? The answer is pretraining — the next-token-prediction objective run on trillions of tokens at a cost of millions of dollars.</p>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "06-model-to-output" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>

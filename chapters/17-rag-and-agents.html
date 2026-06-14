@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plate 17 · RAG, Tools &amp; Agents — The Field Guide to LLMs</title>
+  <meta name="description" content="How to give LLMs access to your data: retrieval-augmented generation, embedding models, vector databases, function calling, structured outputs, and autonomous agents.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 17 · Part VI — Putting it to Work</div>
+          <h1>RAG, Tools &amp; Agents</h1>
+          <p class="standfirst">A model trained last year doesn't know about your internal docs, your database, or what happened this morning. RAG and tool use are how you give it access — without retraining. Understanding how they actually work turns you from a prompt engineer into an LLM systems engineer.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 20 min</span>
+            <span><b>Prereqs</b> · Plates 04, 06, 09</span>
+            <span><b>Code</b> · transformers · sentence-transformers · FAISS · pydantic</span>
+          </div>
+        </div>
+
+        <h2 id="the-knowledge-gap">The knowledge gap problem</h2>
+        <p>
+          Every LLM has a <strong>knowledge cutoff</strong> and a <strong>context limit</strong>. It doesn't know about your company's Q4 earnings call, your internal API docs, or the bug report filed this morning. It also can't run code, look up live prices, or write to your database. Two complementary solutions emerged:
+        </p>
+        <ul>
+          <li><strong>RAG</strong> (<span class="gloss" data-term="rag">Retrieval-Augmented Generation</span>)<a class="cite" data-ref="lewis2020"></a>: retrieve relevant text and paste it into the context before asking the model to answer. Give it the reference manual instead of teaching it the content.</li>
+          <li><strong>Tool use / function calling</strong>: let the model emit a structured request to call an external function (search API, calculator, database query) and receive the result — turning the model into an orchestrator.</li>
+        </ul>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · open-book exam vs. delegation</div>
+          <p>RAG is an <em>open-book exam</em>: the student (model) can't memorize everything, so you hand them the right pages before each question. Tool use is more like <em>delegation</em>: the student writes a memo ("please look up the current stock price and report back") and incorporates the response. Both are runtime knowledge augmentation, not training.</p>
+        </div>
+
+        <h2 id="rag-pipeline">The RAG pipeline</h2>
+        <p>
+          RAG has two phases that mirror a standard database architecture:
+        </p>
+        <p>
+          <strong>Indexing (offline, once)</strong>: Split your documents into chunks. Embed each chunk into a dense vector using an <span class="gloss" data-term="embedding-model">embedding model</span>. Store the vectors in a <span class="gloss" data-term="vector-db">vector database</span> (FAISS, Pinecone, Weaviate, pgvector…).
+        </p>
+        <p>
+          <strong>Retrieval + generation (online, per query)</strong>: Embed the user's query using the <em>same</em> embedding model. Find the top-k most similar document chunks by cosine similarity (or ANN search). Stuff those chunks into the model's prompt. Ask the model to answer using the provided context.
+        </p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 540 230" role="img" aria-label="RAG pipeline: indexing then retrieval+generation">
+            <!-- Indexing side -->
+            <text x="130" y="18" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text-2)">Offline Indexing</text>
+            <rect x="10" y="28" width="80" height="30" rx="4" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
+            <text x="50" y="47" text-anchor="middle" font-size="10" fill="var(--text-2)">Your Docs</text>
+            <text x="100" y="47" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="110" y="28" width="60" height="30" rx="4" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
+            <text x="140" y="47" text-anchor="middle" font-size="10" fill="var(--text-2)">Chunk</text>
+            <text x="178" y="47" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="188" y="28" width="70" height="30" rx="4" fill="var(--accent)" opacity="0.85"/>
+            <text x="223" y="47" text-anchor="middle" font-size="10" fill="white">Embed</text>
+            <text x="265" y="47" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="273" y="28" width="70" height="30" rx="4" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
+            <text x="308" y="47" text-anchor="middle" font-size="10" fill="var(--text-2)">Vector DB</text>
+
+            <!-- Divider -->
+            <line x1="10" y1="90" x2="530" y2="90" stroke="var(--border)" stroke-width="1" stroke-dasharray="4,4"/>
+            <text x="270" y="86" text-anchor="middle" font-size="9" fill="var(--text-3)">query time</text>
+
+            <!-- Query side -->
+            <text x="270" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text-2)">Online: Retrieve + Generate</text>
+            <rect x="10" y="125" width="70" height="30" rx="4" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
+            <text x="45" y="144" text-anchor="middle" font-size="10" fill="var(--text-2)">User Query</text>
+            <text x="88" y="144" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="96" y="125" width="60" height="30" rx="4" fill="var(--accent)" opacity="0.85"/>
+            <text x="126" y="144" text-anchor="middle" font-size="10" fill="white">Embed</text>
+            <text x="164" y="144" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="172" y="125" width="70" height="30" rx="4" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
+            <text x="207" y="144" text-anchor="middle" font-size="10" fill="var(--text-2)">Top-k Docs</text>
+            <text x="250" y="144" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="258" y="110" width="90" height="55" rx="4" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1.5"/>
+            <text x="303" y="134" text-anchor="middle" font-size="10" fill="var(--text-2)">Prompt:</text>
+            <text x="303" y="149" text-anchor="middle" font-size="9" fill="var(--text-3)">Context + Query</text>
+            <text x="356" y="144" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="364" y="125" width="80" height="30" rx="4" fill="var(--accent)" opacity="0.85"/>
+            <text x="404" y="144" text-anchor="middle" font-size="10" fill="white">LLM Generate</text>
+            <text x="452" y="144" fill="var(--text-3)" font-size="12">→</text>
+            <rect x="460" y="125" width="70" height="30" rx="4" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
+            <text x="495" y="144" text-anchor="middle" font-size="10" fill="var(--text-2)">Answer</text>
+            <text x="270" y="210" text-anchor="middle" font-size="10" fill="var(--text-3)">Same embedding model must be used at index time and query time.</text>
+          </svg>
+          <figcaption><b>The two-phase RAG pipeline.</b> Indexing is offline (run once or on updates). Retrieval + generation runs on every query.</figcaption>
+        </figure>
+
+        <h2 id="embeddings">Embedding models: the semantic compass</h2>
+        <p>
+          An <span class="gloss" data-term="embedding-model">embedding model</span> maps a piece of text to a dense vector — a point in a high-dimensional space where <em>similar meaning ≈ nearby points</em>. The embedding model is separate from (and usually much smaller than) your generative LLM.
+        </p>
+        <p>
+          Popular choices: <code>text-embedding-3-small</code> (OpenAI API, 1536 dims), <code>all-MiniLM-L6-v2</code> (fast, 384 dims, runs locally), <code>BAAI/bge-m3</code> (multilingual, 1024 dims, very strong). For production, run the same model family for both indexing and querying — mixing models gives gibberish similarity scores.
+        </p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · full RAG pipeline from scratch</span>
+            <button class="tab" data-pane="local" aria-selected="true">Local · Mac/CPU</button>
+            <button class="tab" data-pane="cloud">Cloud · CUDA</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install sentence-transformers faiss-cpu ollama
+import faiss, numpy as np
+from sentence_transformers import SentenceTransformer
+
+# 1. Index phase: embed some documents
+docs = [
+    "The Python GIL prevents true multi-threading for CPU-bound tasks.",
+    "asyncio is for I/O-bound concurrency, not CPU parallelism.",
+    "Use multiprocessing for CPU-bound parallel Python work.",
+    "FAISS is a library for efficient similarity search over dense vectors.",
+]
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+doc_vecs = embedder.encode(docs, normalize_embeddings=True)  # shape: [4, 384]
+
+index = faiss.IndexFlatIP(doc_vecs.shape[1])   # cosine via inner product
+index.add(doc_vecs.astype("float32"))
+
+# 2. Query phase: embed query, retrieve, generate
+query = "How do I run things in parallel in Python?"
+q_vec = embedder.encode([query], normalize_embeddings=True).astype("float32")
+scores, ids = index.search(q_vec, k=2)                  # top-2
+
+context = "\n\n".join(docs[i] for i in ids[0])
+prompt = f"Use the context below to answer the question.\n\nContext:\n{context}\n\nQuestion: {query}\nAnswer:"
+
+# Generate with a local model via Ollama
+import ollama
+resp = ollama.generate(model="llama3.2", prompt=prompt)
+print(resp["response"])</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install sentence-transformers faiss-gpu transformers accelerate
+import faiss, numpy as np, torch
+from sentence_transformers import SentenceTransformer
+from transformers import pipeline
+
+docs = [
+    "The Python GIL prevents true multi-threading for CPU-bound tasks.",
+    "asyncio is for I/O-bound concurrency, not CPU parallelism.",
+    "Use multiprocessing for CPU-bound parallel Python work.",
+    "FAISS is a library for efficient similarity search over dense vectors.",
+]
+
+embedder = SentenceTransformer("BAAI/bge-m3", device="cuda")
+doc_vecs = embedder.encode(docs, normalize_embeddings=True)
+index = faiss.IndexFlatIP(doc_vecs.shape[1])
+res = faiss.StandardGpuResources()
+gpu_index = faiss.index_cpu_to_gpu(res, 0, index)
+gpu_index.add(doc_vecs.astype("float32"))
+
+query = "How do I run things in parallel in Python?"
+q_vec = embedder.encode([query], normalize_embeddings=True).astype("float32")
+scores, ids = gpu_index.search(q_vec, k=2)
+context = "\n\n".join(docs[i] for i in ids[0])
+
+gen = pipeline("text-generation", model="meta-llama/Llama-3.1-8B-Instruct",
+               device_map="auto", torch_dtype=torch.bfloat16)
+prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
+print(gen(prompt, max_new_tokens=150)[0]["generated_text"])</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>Retrieved docs (scores: 0.72, 0.68):
+  - "Use multiprocessing for CPU-bound parallel Python work."
+  - "The Python GIL prevents true multi-threading for CPU-bound tasks."
+
+Answer: For CPU-bound parallelism in Python, use the `multiprocessing`
+module. The GIL prevents threads from running Python bytecode in parallel,
+but multiprocessing spawns separate processes that each have their own GIL...</code></pre>
+          </div>
+        </div>
+
+        <h2 id="function-calling">Function calling and tool use</h2>
+        <p>
+          Modern chat models (GPT-4, Claude 3, Llama 3.1) can emit structured function calls instead of free text. You declare the available tools (name, description, parameter schema) in the system prompt; the model decides when and how to call them; your code executes the call and returns the result; the model continues.
+        </p>
+        <p>
+          The key insight: the model is not actually calling anything. It's generating a JSON blob that <em>you</em> execute. The model is the planner; you are the runtime.
+        </p>
+
+        <div class="codeblock" data-tabs>
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · tool use with pydantic validation</span>
+            <button class="tab" data-pane="local" aria-selected="true">From scratch</button>
+            <button class="tab" data-pane="cloud">With library</button>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install anthropic pydantic
+import anthropic, json
+from pydantic import BaseModel
+
+client = anthropic.Anthropic()
+
+# Define a tool schema (what the model can call)
+tools = [{
+    "name": "get_weather",
+    "description": "Get current weather for a city.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "description": "City name"},
+            "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+        },
+        "required": ["city"]
+    }
+}]
+
+def get_weather(city: str, unit: str = "celsius") -> dict:
+    # In reality: call a weather API
+    return {"city": city, "temp": 22, "unit": unit, "condition": "sunny"}
+
+# Agentic loop: model may call tools, we respond, model continues
+messages = [{"role": "user", "content": "What's the weather in Tokyo?"}]
+
+while True:
+    resp = client.messages.create(
+        model="claude-opus-4-8", max_tokens=1024, tools=tools, messages=messages
+    )
+    if resp.stop_reason == "end_turn":
+        print(resp.content[0].text)
+        break
+    # Handle tool call
+    for block in resp.content:
+        if block.type == "tool_use":
+            result = get_weather(**block.input)
+            messages += [
+                {"role": "assistant", "content": resp.content},
+                {"role": "user", "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": json.dumps(result)
+                }]}
+            ]</code></pre></div>
+          <div class="code-pane" data-pane="cloud" hidden><pre><code class="language-python"># pip install openai pydantic
+from openai import OpenAI
+from pydantic import BaseModel
+import json
+
+client = OpenAI()
+
+# Pydantic schema → JSON schema for the tool definition
+class WeatherInput(BaseModel):
+    city: str
+    unit: str = "celsius"
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city.",
+        "parameters": WeatherInput.model_json_schema()
+    }
+}]
+
+def get_weather(city: str, unit: str = "celsius") -> dict:
+    return {"city": city, "temp": 22, "unit": unit, "condition": "sunny"}
+
+messages = [{"role": "user", "content": "What's the weather in Tokyo?"}]
+
+while True:
+    resp = client.chat.completions.create(
+        model="gpt-4o", messages=messages, tools=tools
+    )
+    msg = resp.choices[0].message
+    if not msg.tool_calls:
+        print(msg.content)
+        break
+    messages.append(msg)
+    for call in msg.tool_calls:
+        args = WeatherInput.model_validate_json(call.function.arguments)
+        result = get_weather(**args.model_dump())
+        messages.append({
+            "role": "tool", "tool_call_id": call.id,
+            "content": json.dumps(result)
+        })</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code># Model emits a tool call (not shown to end user):
+# {"name": "get_weather", "input": {"city": "Tokyo", "unit": "celsius"}}
+
+# After tool result injected back:
+The current weather in Tokyo is 22°C and sunny.</code></pre>
+          </div>
+        </div>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>Tool use is essentially <strong>RPC over text</strong>. The model generates a structured call; you dispatch it via your normal code; you serialize the response back. The "agentic loop" is just a while loop: keep calling the model until it's done emitting tool calls. The model is a stateless function — all state lives in the <code>messages</code> array you maintain.</p>
+        </div>
+
+        <h2 id="structured-outputs">Structured outputs with Pydantic</h2>
+        <p>
+          Sometimes you don't want free text at all — you want JSON that matches a schema. <span class="gloss" data-term="pydantic">Pydantic</span> is the standard tool for this in the Python LLM ecosystem: define your schema as a Pydantic model, generate its JSON Schema, pass it to the model, validate the response.
+        </p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · structured extraction with Pydantic</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python"># pip install anthropic pydantic
+from anthropic import Anthropic
+from pydantic import BaseModel
+from typing import List
+import json
+
+class BugReport(BaseModel):
+    title: str
+    severity: str           # "low" | "medium" | "high" | "critical"
+    affected_components: List[str]
+    steps_to_reproduce: List[str]
+    suggested_fix: str | None = None
+
+client = Anthropic()
+raw_text = """
+We're seeing random 500s on /api/checkout after the deploy yesterday.
+Happens ~5% of the time under load. Stack trace shows NullPointerException
+in PaymentService.processCard(). Only affects credit card payments, not PayPal.
+"""
+
+resp = client.messages.create(
+    model="claude-opus-4-8",
+    max_tokens=1024,
+    system=f"Extract a structured bug report. Respond with JSON matching this schema:\n{json.dumps(BugReport.model_json_schema(), indent=2)}",
+    messages=[{"role": "user", "content": raw_text}]
+)
+report = BugReport.model_validate_json(resp.content[0].text)
+print(f"Severity: {report.severity}")
+print(f"Components: {report.affected_components}")</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code>Severity: high
+Components: ['PaymentService', 'checkout API']
+# Full BugReport object is now validated Python — no manual JSON parsing.</code></pre>
+          </div>
+        </div>
+
+        <div class="callout callout--gotcha">
+          <div class="callout__tag">Gotcha · constrained decoding vs. prompt-only</div>
+          <p>Asking a model nicely to "output valid JSON" works most of the time. But for production systems, use constrained decoding (grammar-based token masking) via tools like <code>outlines</code>, <code>guidance</code>, or the <code>response_format={"type": "json_object"}</code> flag on OpenAI — these guarantee syntactically valid output by construction, not by luck.</p>
+        </div>
+
+        <h2 id="agents">Agents: loops, memory, planning</h2>
+        <p>
+          An <span class="gloss" data-term="agents">agent</span> is a model in a loop with tools. Rather than a single prompt → response, the agent gets a goal, plans steps, calls tools, observes results, revises its plan, and iterates — all autonomously, until it decides it's done (or hits a step limit).
+        </p>
+        <p>
+          The minimal agent loop looks like this:
+        </p>
+
+        <div class="codeblock">
+          <div class="codeblock__bar">
+            <span class="codeblock__lang"><span class="lamp"></span>python · minimal ReAct agent pattern</span>
+            <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
+          </div>
+          <div class="code-pane" data-pane="local"><pre><code class="language-python">import anthropic, subprocess, json
+
+client = anthropic.Anthropic()
+
+def run_bash(command: str) -> str:
+    result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10)
+    return result.stdout + result.stderr
+
+tools = [{
+    "name": "bash",
+    "description": "Run a bash command. Use for file operations, data processing, calculations.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"command": {"type": "string"}},
+        "required": ["command"]
+    }
+}]
+
+SYSTEM = """You are a helpful agent with access to a bash shell.
+Think step by step. Use tools to accomplish tasks. When done, respond with FINAL ANSWER: <answer>."""
+
+goal = "Count the number of Python files in /usr/lib and report the total."
+messages = [{"role": "user", "content": goal}]
+
+for step in range(10):   # safety limit
+    resp = client.messages.create(
+        model="claude-opus-4-8", max_tokens=1024,
+        system=SYSTEM, tools=tools, messages=messages
+    )
+    if resp.stop_reason == "end_turn":
+        text = next(b.text for b in resp.content if hasattr(b, "text"))
+        if "FINAL ANSWER:" in text:
+            print(text.split("FINAL ANSWER:")[-1].strip())
+            break
+    messages.append({"role": "assistant", "content": resp.content})
+    for block in resp.content:
+        if block.type == "tool_use":
+            output = run_bash(block.input["command"])
+            messages.append({"role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": block.id, "content": output
+            }]})</code></pre></div>
+          <div class="codeblock code-out" style="margin:0;border:0;border-radius:0">
+            <div class="codeblock__bar"><span class="codeblock__lang"><span class="lamp"></span>output</span></div>
+            <pre><code># Agent reasoning trace:
+# Step 1 → runs: find /usr/lib -name "*.py" | wc -l
+# Step 2 → observes: 4,271
+# Step 3 → emits: FINAL ANSWER: There are 4,271 Python files in /usr/lib.</code></pre>
+          </div>
+        </div>
+
+        <div class="callout callout--fail">
+          <div class="callout__tag">What goes wrong with agents</div>
+          <p>Agents fail in specific, predictable ways: they get stuck in loops (calling the same tool repeatedly), overshoot their goals (doing more than asked), hallucinate tool results (especially when the tool output is ambiguous), or fail silently when a tool errors. Defensive engineering matters: always add a step limit, log every tool call, validate outputs, and consider giving the agent a "I don't know" or "I'm stuck" tool it can call to exit gracefully.</p>
+        </div>
+
+        <h2 id="rag-gotchas">RAG failure modes to know</h2>
+        <p>
+          RAG sounds simple but has a long tail of failure modes every production system hits:
+        </p>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Failure mode</th><th>Symptom</th><th>Fix</th></tr></thead>
+            <tbody>
+              <tr><td>Chunking mismatch</td><td>Retrieved chunks miss key context (split mid-sentence)</td><td>Semantic/paragraph chunking; add chunk overlap</td></tr>
+              <tr><td>Wrong embedding model</td><td>Irrelevant docs retrieved</td><td>Use domain-appropriate model; BGE-M3 for multilingual</td></tr>
+              <tr><td>Index staleness</td><td>Outdated info despite new docs</td><td>Incremental re-indexing on document updates</td></tr>
+              <tr><td>Context window overflow</td><td>Top-k too large, prompt too long</td><td>Compress/summarize retrieved chunks; re-rank then select</td></tr>
+              <tr><td>Hallucination on retrieval miss</td><td>Model answers even when nothing relevant found</td><td>Calibrate with "I don't have information about X" fallback</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li><strong>RAG</strong> = embed your documents → store in a vector DB → at query time, retrieve the top-k chunks and paste them into the prompt. The model never needs to be retrained.</li>
+          <li><strong>Embedding models</strong> map text to dense vectors where semantic similarity = geometric proximity. Always use the same model for indexing and querying.</li>
+          <li><strong>Function calling / tool use</strong> lets the model emit structured JSON calls that your code executes. The model is the planner; you are the runtime. The "agentic loop" is just a while loop over model calls.</li>
+          <li><strong>Pydantic</strong> + JSON Schema is the standard way to get validated structured output from LLMs. For production, prefer constrained decoding over prompt-only approaches.</li>
+          <li><strong>Agents</strong> = model + tools + loop. They fail in predictable ways — always add step limits, log all tool calls, validate outputs.</li>
+        </ul>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "17-rag-and-agents" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>
