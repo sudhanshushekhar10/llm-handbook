@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brainstorming · The Mathematical Soul — The Field Guide to LLMs</title>
+  <meta name="description" content="Vectors, matrix multiplication, dot products, softmax, and the full attention mechanism explained from scratch with real-world analogies and worked examples.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..800;1,400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Hanken+Grotesk:wght@400..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>window.tailwind && (tailwind.config = { corePlugins: { preflight: false } });</script>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    /* ── Matrix display ─────────────────────────────────────────── */
+    .mat-scene { display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin:1.5rem 0; font-family:'JetBrains Mono',monospace; }
+    .mat        { display:inline-flex; flex-direction:column; gap:3px; position:relative; padding:6px 14px; }
+    .mat::before, .mat::after {
+      content:""; position:absolute; top:0; bottom:0; width:6px; border:2px solid var(--text-2);
+    }
+    .mat::before { left:0; border-right:none; border-radius:3px 0 0 3px; }
+    .mat::after  { right:0; border-left:none; border-radius:0 3px 3px 0; }
+    .mat-row { display:flex; gap:8px; }
+    .mc      { display:inline-block; min-width:2ch; text-align:right; font-size:.92rem; padding:2px 4px; border-radius:3px; }
+    .mc.hl-row { background:rgba(47,91,208,.15); color:var(--accent); font-weight:600; }
+    .mc.hl-col { background:rgba(245,158,11,.15); color:#b45309; font-weight:600; }
+    .mc.hl-res { background:rgba(16,185,129,.15); color:#047857; font-weight:600; }
+    .mat-op { font-size:1.4rem; color:var(--text-3); align-self:center; }
+    .mat-label { font-size:.75rem; color:var(--text-3); text-align:center; margin-top:.25rem; }
+    .mat-wrap { display:flex; flex-direction:column; align-items:center; gap:2px; }
+
+    /* ── Step-through box ────────────────────────────────────────── */
+    .step-box { border:1.5px solid var(--border); border-radius:8px; padding:1rem 1.25rem; margin:.75rem 0; background:var(--surface-2); }
+    .step-box .step-hd { font-family:'Schibsted Grotesk',sans-serif; font-weight:700; font-size:.85rem; color:var(--accent); margin-bottom:.5rem; letter-spacing:.04em; text-transform:uppercase; }
+    .step-box .step-eq { font-family:'JetBrains Mono',monospace; font-size:.95rem; line-height:1.8; }
+    .step-box .step-eq .hl-r { color:var(--accent); font-weight:600; }
+    .step-box .step-eq .hl-c { color:#b45309; font-weight:600; }
+    .step-box .step-eq .hl-ans { color:#047857; font-weight:700; }
+
+    /* ── Word-space 2D plot ─────────────────────────────────────── */
+    .wordspace { background:var(--surface-2); border:1.5px solid var(--border); border-radius:10px; padding:.5rem; margin:1.25rem 0; }
+
+    /* ── Attention score grid ───────────────────────────────────── */
+    .attn-grid table { border-collapse:separate; border-spacing:3px; }
+    .attn-grid td, .attn-grid th { padding:6px 10px; border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:.82rem; text-align:center; }
+    .attn-grid th { background:var(--surface-2); font-family:'Schibsted Grotesk',sans-serif; font-size:.78rem; font-weight:700; color:var(--text-2); }
+    .attn-heat-0 { background:rgba(47,91,208,.08);  color:var(--text-2); }
+    .attn-heat-1 { background:rgba(47,91,208,.20);  color:var(--accent); }
+    .attn-heat-2 { background:rgba(47,91,208,.40);  color:var(--accent); font-weight:600; }
+    .attn-heat-3 { background:rgba(47,91,208,.65);  color:white;         font-weight:700; }
+    .attn-heat-4 { background:rgba(47,91,208,.90);  color:white;         font-weight:700; }
+
+    /* ── Pipeline strip ─────────────────────────────────────────── */
+    .pipeline { display:flex; align-items:stretch; flex-wrap:wrap; gap:0; margin:1.5rem 0; border:1.5px solid var(--border); border-radius:8px; overflow:hidden; }
+    .pipeline__step { flex:1; min-width:90px; padding:.6rem .75rem; background:var(--surface-2); border-right:1.5px solid var(--border); text-align:center; }
+    .pipeline__step:last-child { border-right:none; }
+    .pipeline__step .ps-label { font-family:'Schibsted Grotesk',sans-serif; font-weight:700; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--accent); }
+    .pipeline__step .ps-desc  { font-size:.78rem; color:var(--text-2); margin-top:.2rem; line-height:1.4; }
+    .pipeline__arrow { display:flex; align-items:center; color:var(--text-3); font-size:1.1rem; padding:0 .1rem; background:var(--surface-2); border-right:1.5px solid var(--border); }
+
+    /* ── Formula highlight box ─────────────────────────────────── */
+    .formula-box { border:2px solid var(--accent); border-radius:8px; padding:.9rem 1.2rem; margin:1.25rem 0; background:rgba(47,91,208,.04); font-family:'JetBrains Mono',monospace; font-size:1.05rem; text-align:center; color:var(--text-1); }
+    .formula-box .formula-label { font-family:'Schibsted Grotesk',sans-serif; font-size:.75rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin-bottom:.4rem; }
+
+    /* ── Numbered callout ───────────────────────────────────────── */
+    .num-steps { counter-reset:numstep; list-style:none; padding:0; margin:1rem 0; }
+    .num-steps li { counter-increment:numstep; display:flex; gap:.85rem; margin-bottom:.85rem; align-items:flex-start; }
+    .num-steps li::before { content:counter(numstep); flex-shrink:0; display:flex; align-items:center; justify-content:center; width:1.7rem; height:1.7rem; background:var(--accent); color:white; border-radius:50%; font-family:'Schibsted Grotesk',sans-serif; font-weight:800; font-size:.8rem; margin-top:.1rem; }
+    .num-steps li p { margin:0; }
+
+    /* ── Softmax worked example ─────────────────────────────────── */
+    .sfmx-row { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; margin:.4rem 0; font-family:'JetBrains Mono',monospace; font-size:.88rem; }
+    .sfmx-bar { height:12px; background:var(--accent); border-radius:3px; display:inline-block; opacity:.75; }
+  </style>
+</head>
+<body>
+  <a class="skiplink" href="#main">Skip to content</a>
+  <div class="progress" id="progress"></div>
+
+  <header class="topbar">
+    <button class="iconbtn mobile-nav-toggle" id="nav-toggle" aria-label="Open navigation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <a class="topbar__brand" href="../index.html">
+      <span class="topbar__mark">∑</span>
+      <span class="topbar__title">The Field Guide<small>to Large Language Models</small></span>
+    </a>
+    <div class="topbar__actions">
+      <button class="searchbtn" data-open-search><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
+      <button class="iconbtn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar"><nav id="sidebar-nav"></nav></aside>
+
+    <main class="content" id="main">
+      <article class="prose">
+        <div class="masthead">
+          <div class="plate-no"><span class="dot"></span> Plate 20 · Part VII — Brainstorming</div>
+          <h1>The Mathematical Soul</h1>
+          <p class="standfirst">LLMs are described as black boxes, but the machinery inside is just high-school arithmetic scaled to an astronomical degree — and it is completely learnable. This plate builds from zero: what a vector is, how matrix multiplication works (with actual numbers you can verify), and exactly how the attention mechanism resolves the meaning of a word from its neighbours. No hand-waving.</p>
+          <div class="masthead__meta">
+            <span><b>Reading time</b> · 35 min</span>
+            <span><b>Prereqs</b> · None — truly from scratch</span>
+            <span><b>Level</b> · Conceptual deep-dive</span>
+          </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="the-big-picture">The big picture before we dive</h2>
+        <p>
+          Every LLM, from the humblest 1B-parameter model to GPT-4, does exactly one thing at its core: it takes a list of numbers as input and returns a list of numbers as output. The magic is entirely in <em>which</em> numbers, and the mathematics that transforms them.
+        </p>
+        <p>
+          Here is the complete story in five sentences, which we will then unpack in exhaustive detail:
+        </p>
+        <ol>
+          <li>Every word (or word-piece) gets converted to a <strong>vector</strong> — a list of numbers that encodes its rough meaning.</li>
+          <li>That vector gets <strong>transformed by matrices</strong> — grids of numbers that act like lenses, shifting the vector's position in meaning-space.</li>
+          <li>The <strong>attention mechanism</strong> lets every word's vector look at every other word's vector and borrow the parts that are relevant, resolving ambiguity from context.</li>
+          <li>Dozens of those transforms + attention layers are stacked on top of each other, each one refining the representation further.</li>
+          <li>The final vector is projected back to a probability distribution over all possible next words. The highest-probability word is printed.</li>
+        </ol>
+        <p>
+          The only operations involved are: addition, multiplication, and one nonlinearity called softmax. That's it. Let's build each piece from scratch.
+        </p>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="vectors">Part 1 — Vectors: words as coordinates</h2>
+
+        <h3>What is a vector?</h3>
+        <p>
+          A <strong>vector</strong> is simply an ordered list of numbers. That's the whole definition. A vector with two numbers describes a point on a flat plane. A vector with three numbers describes a point in 3D space. A vector with 4,096 numbers describes a point in a 4,096-dimensional space — which you can't visualise, but the math works exactly the same way.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · a customer profile in a spreadsheet</div>
+          <p>Imagine you're a marketing analyst and you represent each customer with five measurements: <em>age, monthly spend, years as customer, support calls logged, satisfaction score</em>. Each customer is a row of five numbers — a 5-dimensional vector. You can measure how "similar" two customers are by seeing how close their rows are to each other. That's exactly what an embedding vector does for a word: it's a row of numbers that places the word in a space where similar words land nearby.</p>
+        </div>
+
+        <h3>A 2D toy example: words on a map</h3>
+        <p>
+          Suppose we have a tiny vocabulary of six words and we give each one just two coordinates (to keep it drawable):
+        </p>
+
+        <div class="wordspace">
+          <svg viewBox="0 0 520 300" role="img" aria-label="2D word embedding space showing words clustered by meaning">
+            <!-- grid -->
+            <defs><pattern id="g" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="var(--border)" stroke-width=".5"/></pattern></defs>
+            <rect width="520" height="300" fill="url(#g)"/>
+            <!-- axes -->
+            <line x1="40" y1="260" x2="490" y2="260" stroke="var(--text-3)" stroke-width="1.5"/>
+            <line x1="40" y1="260" x2="40" y2="20"  stroke="var(--text-3)" stroke-width="1.5"/>
+            <text x="500" y="264" font-size="11" fill="var(--text-3)">dim 1</text>
+            <text x="44"  y="15"  font-size="11" fill="var(--text-3)">dim 2</text>
+            <!-- clusters -->
+            <!-- Royalty cluster -->
+            <circle cx="350" cy="70"  r="6" fill="var(--accent)"/>
+            <text x="358" y="68" font-size="12" fill="var(--accent)" font-weight="600">King</text>
+            <text x="358" y="80" font-size="10" fill="var(--text-3)">[3.5, 2.3]</text>
+            <circle cx="320" cy="95"  r="6" fill="var(--accent)" opacity=".8"/>
+            <text x="328" y="93" font-size="12" fill="var(--accent)" font-weight="600">Queen</text>
+            <text x="328" y="105" font-size="10" fill="var(--text-3)">[3.2, 2.1]</text>
+            <circle cx="370" cy="100" r="6" fill="var(--accent)" opacity=".7"/>
+            <text x="378" y="98" font-size="12" fill="var(--accent)" font-weight="600">Prince</text>
+            <!-- royalty ellipse -->
+            <ellipse cx="348" cy="88" rx="52" ry="38" fill="none" stroke="var(--accent)" stroke-width="1" stroke-dasharray="4,3" opacity=".4"/>
+            <text x="360" y="138" font-size="10" fill="var(--accent)" opacity=".6" font-style="italic">Royalty cluster</text>
+
+            <!-- Fruit cluster -->
+            <circle cx="130" cy="180" r="6" fill="#f59e0b"/>
+            <text x="140" y="178" font-size="12" fill="#b45309" font-weight="600">Apple</text>
+            <text x="140" y="190" font-size="10" fill="var(--text-3)">[1.3, 0.9]</text>
+            <circle cx="165" cy="200" r="6" fill="#f59e0b" opacity=".8"/>
+            <text x="173" y="198" font-size="12" fill="#b45309" font-weight="600">Mango</text>
+            <circle cx="110" cy="210" r="6" fill="#f59e0b" opacity=".7"/>
+            <text x="118" y="208" font-size="12" fill="#b45309" font-weight="600">Pear</text>
+            <ellipse cx="135" cy="197" rx="52" ry="28" fill="none" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3" opacity=".4"/>
+            <text x="105" y="240" font-size="10" fill="#b45309" opacity=".6" font-style="italic">Fruit cluster</text>
+
+            <!-- distance annotation -->
+            <line x1="165" y1="195" x2="325" y2="95" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="3,3"/>
+            <text x="230" y="135" font-size="10" fill="var(--text-3)" font-style="italic">large distance = different meaning</text>
+            <text x="200" y="145" font-size="10" fill="var(--text-3)" font-style="italic">small distance = similar meaning ↓</text>
+            <line x1="350" y1="73" x2="323" y2="93" stroke="var(--text-3)" stroke-width="1" stroke-dasharray="2,2"/>
+          </svg>
+          <p style="text-align:center;font-size:.82rem;color:var(--text-3);margin:.25rem 0 .5rem">Fig 1. Six words plotted in 2D embedding space. Real models use 4,096+ dimensions, but the geometry is identical.</p>
+        </div>
+
+        <p>
+          Key observation: you didn't <em>program</em> the rule "fruits go together." The model <em>learned</em> those coordinates by reading billions of sentences. Words that appear in similar contexts naturally drift close together during training.
+        </p>
+
+        <div class="callout callout--win">
+          <div class="callout__tag">The famous King − Man + Woman = Queen example</div>
+          <p>Because meaning is encoded as position in a geometric space, you can do <em>arithmetic on meaning</em>. If you take the vector for <strong>King</strong>, subtract the vector for <strong>Man</strong>, and add the vector for <strong>Woman</strong>, the result lands very close to the vector for <strong>Queen</strong>. The geometry captures the relationship "royalty minus male plus female." This works because the direction from Man→Woman is roughly the same vector as the direction from King→Queen — two parallel edges of the same semantic rectangle.</p>
+        </div>
+
+        <h3>Scaling up to 4,096 dimensions</h3>
+        <p>
+          A 2D map can't hold the complexity of human language. Real embeddings use hundreds or thousands of dimensions. Llama 3 8B uses 4,096-dimensional vectors; GPT-4 likely uses 12,288. You can't visualise 4,096 dimensions, but mathematically it's still the same thing: a list of numbers, just longer.
+        </p>
+        <p>
+          More dimensions means more <em>capacity to encode nuance</em>. In 2D you might capture "royalty" and "animacy." In 4,096D you might capture gender, formality, concreteness, emotional valence, syntactic role, domain (medical / legal / culinary), temporal aspect, and thousands of other subtleties the model has picked up from reading text.
+        </p>
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>Think of an embedding vector as a <strong>feature vector</strong> in the sense of a feature store — a dense encoding of everything the system knows about an entity. The difference from hand-crafted features is that <em>the model learned which dimensions to use</em>. You never told it dimension 1,347 means "formal register" — it figured that out by being trained to predict text.</p>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="dot-product">Part 2 — The dot product: measuring similarity</h2>
+        <p>
+          Before we tackle matrices, we need one prerequisite operation: the <strong>dot product</strong>. It measures how "aligned" two vectors are, and it's the most-used single operation in all of deep learning.
+        </p>
+        <p>
+          To compute a dot product: multiply each pair of matching numbers, then sum the results.
+        </p>
+
+        <div class="step-box">
+          <div class="step-hd">Dot product worked example</div>
+          <div class="step-eq">
+            a = [<span class="hl-r">2, 3, 1</span>]&nbsp;&nbsp;&nbsp;b = [<span class="hl-c">4, 1, 2</span>]
+            <br><br>
+            a · b = (<span class="hl-r">2</span>×<span class="hl-c">4</span>) + (<span class="hl-r">3</span>×<span class="hl-c">1</span>) + (<span class="hl-r">1</span>×<span class="hl-c">2</span>)
+            <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 8 + 3 + 2
+            <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <span class="hl-ans">13</span>
+          </div>
+        </div>
+
+        <p>
+          What does the number 13 mean? It measures <strong>alignment</strong>. A higher dot product means the two vectors "point in the same direction" in meaning-space — they are more similar. A dot product near zero means they are perpendicular (unrelated). A negative dot product means they point away from each other (opposed in meaning).
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · rating movies</div>
+          <p>Imagine you and a friend each rate five movies on a 0–5 scale. Your ratings are vector a; your friend's are vector b. The dot product a·b is high if you both gave high ratings to the same movies — meaning you have similar taste. A movie recommendation engine does exactly this: it computes the dot product between your taste vector and every other user's taste vector, then recommends movies that users with high dot products to you enjoyed.</p>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="matrices">Part 3 — Matrices: the transformation engine</h2>
+
+        <h3>What is a matrix?</h3>
+        <p>
+          A <strong>matrix</strong> is a rectangular grid of numbers. That's it. A 3×2 matrix has 3 rows and 2 columns. A 4,096×4,096 matrix has 4,096 rows and 4,096 columns. When you "multiply a vector by a matrix," you are running the vector through a set of filters — one per row — and producing a new vector.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · a grading rubric</div>
+          <p>Imagine you're grading student essays. Each essay is described by three raw numbers: <em>vocabulary richness, argument clarity, grammar score</em>. You have three graders, each of whom assigns different weights to these raw scores to produce their own final grade. Grader A cares mostly about vocabulary; Grader B cares mostly about argument; Grader C weights them equally. The 3×3 grid of all their weights is a matrix. Feeding an essay's raw vector through this matrix produces three final grades simultaneously.</p>
+        </div>
+
+        <h3>A 2×2 example: currency conversion</h3>
+        <p>
+          Let's make this very concrete. Suppose you have a 2-element vector representing a price: [<strong>dollars, euros</strong>]. You want to convert it to a new system: [<strong>pounds, yen</strong>]. The conversion rates form a 2×2 matrix:
+        </p>
+
+        <div class="mat-scene">
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc hl-row">0.79</span><span class="mc hl-row">0.86</span></div>
+              <div class="mat-row"><span class="mc">130</span><span class="mc">141</span></div>
+            </div>
+            <div class="mat-label">Weight matrix W<br>(2×2)</div>
+          </div>
+          <span class="mat-op">×</span>
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc hl-col">100</span></div>
+              <div class="mat-row"><span class="mc hl-col">50</span></div>
+            </div>
+            <div class="mat-label">Input vector x<br>[dollars, euros]</div>
+          </div>
+          <span class="mat-op">=</span>
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc hl-res">?</span></div>
+              <div class="mat-row"><span class="mc hl-res">?</span></div>
+            </div>
+            <div class="mat-label">Output vector<br>[pounds, yen]</div>
+          </div>
+        </div>
+
+        <p>
+          How do we compute the output? Row by row, using dot products:
+        </p>
+
+        <div class="step-box">
+          <div class="step-hd">Step 1 — compute pounds (row 1 · input)</div>
+          <div class="step-eq">
+            Row 1 = [<span class="hl-r">0.79, 0.86</span>]&nbsp;&nbsp;Input = [<span class="hl-c">100, 50</span>]
+            <br>pounds = (<span class="hl-r">0.79</span> × <span class="hl-c">100</span>) + (<span class="hl-r">0.86</span> × <span class="hl-c">50</span>) = 79 + 43 = <span class="hl-ans">122</span>
+          </div>
+        </div>
+        <div class="step-box">
+          <div class="step-hd">Step 2 — compute yen (row 2 · input)</div>
+          <div class="step-eq">
+            Row 2 = [<span class="hl-r">130, 141</span>]&nbsp;&nbsp;Input = [<span class="hl-c">100, 50</span>]
+            <br>yen = (<span class="hl-r">130</span> × <span class="hl-c">100</span>) + (<span class="hl-r">141</span> × <span class="hl-c">50</span>) = 13,000 + 7,050 = <span class="hl-ans">20,050</span>
+          </div>
+        </div>
+
+        <div class="mat-scene">
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc">0.79</span><span class="mc">0.86</span></div>
+              <div class="mat-row"><span class="mc">130</span><span class="mc">141</span></div>
+            </div>
+            <div class="mat-label">W</div>
+          </div>
+          <span class="mat-op">×</span>
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc">100</span></div>
+              <div class="mat-row"><span class="mc">50</span></div>
+            </div>
+            <div class="mat-label">x</div>
+          </div>
+          <span class="mat-op">=</span>
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc hl-res">122</span></div>
+              <div class="mat-row"><span class="mc hl-res">20,050</span></div>
+            </div>
+            <div class="mat-label">Wx</div>
+          </div>
+        </div>
+
+        <p>
+          The pattern is simple: <strong>each output element = one row of the matrix dotted with the input vector.</strong> A matrix with <em>m</em> rows produces an output with <em>m</em> elements. This is the core primitive of all of deep learning.
+        </p>
+
+        <h3>The shape rule ("handshake rule")</h3>
+        <p>
+          For matrix multiplication to work, the number of <em>columns</em> in the matrix must match the number of <em>rows</em> in the input. The output dimensions are: <strong>(matrix rows) × (input columns)</strong>.
+        </p>
+
+        <div class="step-box">
+          <div class="step-hd">Shape rule</div>
+          <div class="step-eq">
+            Matrix: <span class="hl-r">m</span> × <span class="hl-c">n</span>&nbsp;&nbsp;&nbsp;Input: <span class="hl-c">n</span> × <span class="hl-ans">p</span>
+            <br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;↑ must match ↑
+            <br><br>
+            Output: <span class="hl-r">m</span> × <span class="hl-ans">p</span>
+          </div>
+        </div>
+
+        <p>
+          In LLMs: the input is a 4,096-dimensional vector (4096×1). A weight matrix might be 4096×4096 — it produces another 4,096-dimensional vector. Or 4096×16384 — it expands the vector into a 16,384-dimensional space (this is the FFN's first layer). The math is always the same; only the numbers get bigger.
+        </p>
+
+        <h3>A 3×3 example: recipe nutrition analysis</h3>
+        <p>
+          Let's do one more worked example, slightly bigger. You have a recipe described by three raw measurements: [<strong>flour_grams, eggs_count, butter_grams</strong>] = [<strong>200, 3, 80</strong>]. You want to compute three nutritional values: calories, protein, fat. The conversion factors form a 3×3 matrix:
+        </p>
+
+        <div class="mat-scene" style="font-size:.85rem;">
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc">3.6</span><span class="mc">74</span><span class="mc">7.2</span></div>
+              <div class="mat-row"><span class="mc">0.10</span><span class="mc">6.3</span><span class="mc">0.09</span></div>
+              <div class="mat-row"><span class="mc">0.01</span><span class="mc">5.0</span><span class="mc">0.80</span></div>
+            </div>
+            <div class="mat-label">Nutrition matrix (3×3)</div>
+          </div>
+          <span class="mat-op">×</span>
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc">200</span></div>
+              <div class="mat-row"><span class="mc">3</span></div>
+              <div class="mat-row"><span class="mc">80</span></div>
+            </div>
+            <div class="mat-label">Recipe vector (3×1)</div>
+          </div>
+          <span class="mat-op">=</span>
+          <div class="mat-wrap">
+            <div class="mat">
+              <div class="mat-row"><span class="mc hl-res">~1,498</span></div>
+              <div class="mat-row"><span class="mc hl-res">~26</span></div>
+              <div class="mat-row"><span class="mc hl-res">~79</span></div>
+            </div>
+            <div class="mat-label">[kcal, protein_g, fat_g]</div>
+          </div>
+        </div>
+
+        <div class="step-box">
+          <div class="step-hd">Verify row 1 (calories): 3.6×200 + 74×3 + 7.2×80</div>
+          <div class="step-eq">= 720 + 222 + 576 = <span class="hl-ans">1,518 kcal</span></div>
+        </div>
+
+        <p>
+          Notice: one multiplication applied <em>three separate "questions"</em> to the same input simultaneously. That is exactly the role of weight matrices in a neural network — they apply many learned transformations in parallel.
+        </p>
+
+        <h3>Matrix × matrix (batching vectors)</h3>
+        <p>
+          In practice, you process many tokens at once. If a sentence has 10 tokens, each a 4096-dim vector, you stack them as rows into a 10×4096 matrix. Multiplying by a 4096×4096 weight matrix transforms all 10 token vectors simultaneously. This is why GPUs are useful: they are hardware optimised for multiplying large matrices in parallel.
+        </p>
+
+        <div class="callout callout--swe">
+          <div class="callout__tag">From a software-eng POV</div>
+          <p>Matrix multiplication is the fundamental operation. The entire forward pass of a Transformer is a sequence of matrix multiplications + one softmax. When you hear "the model runs on GPU," what that means mechanically is: NVIDIA's GPU can do thousands of multiply-and-add operations in parallel, which is exactly what matrix multiplication requires. A single forward pass for a 7B model might perform on the order of 14 trillion multiply-add operations.</p>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="softmax">Part 4 — Softmax: scores to probabilities</h2>
+        <p>
+          The model needs to convert a set of raw scores (which can be any real number, positive or negative) into <em>probabilities</em> that sum to 1. The function that does this is called <strong>softmax</strong>.
+        </p>
+        <p>
+          Given scores [s₁, s₂, ..., sₙ], softmax computes: <code>p_i = e^(s_i) / sum(e^(s_j) for all j)</code>.
+        </p>
+        <p>
+          In plain English: exponentiate each score (making all values positive), then divide each by the total so they sum to 1.
+        </p>
+
+        <div class="step-box">
+          <div class="step-hd">Softmax worked example — three candidate next words</div>
+          <div class="step-eq">
+            Raw scores: "dog" = <span class="hl-r">3.2</span>,  "cat" = <span class="hl-r">2.1</span>,  "car" = <span class="hl-r">0.4</span>
+            <br><br>
+            Step 1 — exponentiate:
+            <br>&nbsp; e^3.2 ≈ 24.5&nbsp;&nbsp;e^2.1 ≈ 8.2&nbsp;&nbsp;e^0.4 ≈ 1.5
+            <br>&nbsp; sum = 24.5 + 8.2 + 1.5 = 34.2
+            <br><br>
+            Step 2 — normalise:
+            <br>&nbsp; P("dog") = 24.5 / 34.2 ≈ <span class="hl-ans">0.716 (71.6%)</span>
+            <br>&nbsp; P("cat") = 8.2  / 34.2 ≈ <span class="hl-ans">0.240 (24.0%)</span>
+            <br>&nbsp; P("car") = 1.5  / 34.2 ≈ <span class="hl-ans">0.044 (4.4%)</span>
+          </div>
+        </div>
+
+        <div style="margin:.75rem 0 1.25rem">
+          <div class="sfmx-row"><span style="min-width:3.5rem;font-family:'JetBrains Mono',monospace;font-size:.85rem">"dog"</span><span class="sfmx-bar" style="width:215px"></span><span style="margin-left:.5rem;font-size:.85rem">71.6%</span></div>
+          <div class="sfmx-row"><span style="min-width:3.5rem;font-family:'JetBrains Mono',monospace;font-size:.85rem">"cat"</span><span class="sfmx-bar" style="width:72px;opacity:.5"></span><span style="margin-left:.5rem;font-size:.85rem">24.0%</span></div>
+          <div class="sfmx-row"><span style="min-width:3.5rem;font-family:'JetBrains Mono',monospace;font-size:.85rem">"car"</span><span class="sfmx-bar" style="width:13px;opacity:.3"></span><span style="margin-left:.5rem;font-size:.85rem">4.4%</span></div>
+        </div>
+
+        <p>
+          Crucially, softmax <em>amplifies differences</em>. A small raw score gap (3.2 vs 2.1 = only 1.1 apart) becomes a large probability gap (71% vs 24%). This makes the model's choices decisively favour whichever candidate has the highest score rather than wavering evenly between them. The <code>temperature</code> parameter you see in inference settings works by dividing raw scores before softmax — lower temperature amplifies differences further; higher temperature flattens them (more randomness).
+        </p>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="attention">Part 5 — Attention: words listening to each other</h2>
+
+        <h3>Why a single vector per word isn't enough</h3>
+        <p>
+          Here is the core problem with simple word vectors: the word "bank" has one vector. But in "I sat on the river bank" it means something completely different from "I deposited money at the bank." A static dictionary of word→vector can't capture this — you'd need the vector to change depending on neighbours.
+        </p>
+        <p>
+          This is precisely what the <strong>attention mechanism</strong> solves. It lets each token's vector update itself by pulling information from surrounding tokens. After attention, the vector for "bank" near "river" has shifted toward the river-meaning region; "bank" near "deposit" has shifted toward the finance-meaning region. Same starting point, different ending points.
+        </p>
+
+        <h3>The library card analogy</h3>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · a library with index cards</div>
+          <p>Imagine a huge library. Every book has two things: a <strong>label on its spine</strong> (its Key — a short summary of what the book contains) and the <strong>actual book content</strong> (its Value — the detailed information inside).</p>
+          <p>You walk in with a <strong>search query</strong> (your Query — what you're looking for). You scan the spines. You compute a match score between your query and each book's spine label. Then you pull the most relevant books and read them. The "information" you take away is a blend of all the books you pulled, weighted by how closely their spines matched your query.</p>
+          <p>That's attention. Each token is simultaneously: (1) a searcher with a Query asking what context it needs; (2) a book with a Key label advertising what it can offer; (3) a book with a Value containing the actual information to blend in.</p>
+        </div>
+
+        <h3>Step 1: Create Q, K, V vectors</h3>
+        <p>
+          For each token, we create three derived vectors from the original embedding by multiplying by three separate learned weight matrices:
+        </p>
+
+        <div class="mat-scene" style="flex-direction:column;gap:.5rem;align-items:flex-start">
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem;min-width:2.5rem">Q<sub>i</sub></span>
+            <span style="color:var(--text-3)">=</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem">embedding<sub>i</sub></span>
+            <span class="mat-op" style="font-size:1rem">×</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem">W<sub>Q</sub></span>
+            <span style="font-size:.82rem;color:var(--text-3);font-style:italic">&nbsp;← "what am I looking for?"</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem;min-width:2.5rem">K<sub>i</sub></span>
+            <span style="color:var(--text-3)">=</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem">embedding<sub>i</sub></span>
+            <span class="mat-op" style="font-size:1rem">×</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem">W<sub>K</sub></span>
+            <span style="font-size:.82rem;color:var(--text-3);font-style:italic">&nbsp;← "what do I offer?"</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem;min-width:2.5rem">V<sub>i</sub></span>
+            <span style="color:var(--text-3)">=</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem">embedding<sub>i</sub></span>
+            <span class="mat-op" style="font-size:1rem">×</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:.9rem">W<sub>V</sub></span>
+            <span style="font-size:.82rem;color:var(--text-3);font-style:italic">&nbsp;← "what payload will I share?"</span>
+          </div>
+        </div>
+
+        <p>
+          W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> are the learned weight matrices. They are learned during training — nobody hand-crafted them. After training on billions of tokens, they encode what makes a useful Query, Key, and Value in human language.
+        </p>
+        <p>
+          In a typical model (e.g., 4,096-dim embeddings, 64-dim head size), these matrices are 4,096×64, projecting the big embedding down to a smaller space for efficient computation. This is where GQA and MQA (from Plate 15) come in — but for now, assume each token gets its own Q, K, and V.
+        </p>
+
+        <h3>Step 2: Compute raw attention scores</h3>
+        <p>
+          For a given query token <em>i</em>, we compute how much it should attend to every other token <em>j</em> by taking the dot product of Q<sub>i</sub> with K<sub>j</sub>:
+        </p>
+
+        <div class="formula-box">
+          <div class="formula-label">Raw attention score</div>
+          score(i, j) = Q<sub>i</sub> · K<sub>j</sub>
+        </div>
+
+        <p>
+          A high score means token <em>i</em>'s Query aligns well with token <em>j</em>'s Key — token <em>i</em> will borrow heavily from <em>j</em>'s Value.
+        </p>
+
+        <h3>Step 2 worked: "The cat sat on the mat"</h3>
+        <p>
+          Let's trace through a tiny example. Say our tokens are:
+          <code>[The, cat, sat, on, the, mat]</code>. After the W<sub>Q</sub> and W<sub>K</sub> projections, suppose we have these simplified 2D Q and K vectors:
+        </p>
+
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Token</th><th>Query vector</th><th>Key vector</th></tr></thead>
+            <tbody>
+              <tr><td>The</td><td>[0.1, 0.2]</td><td>[0.1, 0.1]</td></tr>
+              <tr><td><strong>cat</strong></td><td>[<strong>0.9, 0.3</strong>]</td><td>[0.8, 0.4]</td></tr>
+              <tr><td>sat</td><td>[0.2, 0.8]</td><td>[0.1, 0.7]</td></tr>
+              <tr><td>on</td><td>[0.1, 0.1]</td><td>[0.1, 0.0]</td></tr>
+              <tr><td>the</td><td>[0.1, 0.2]</td><td>[0.1, 0.1]</td></tr>
+              <tr><td>mat</td><td>[0.3, 0.9]</td><td>[0.3, 0.8]</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p>
+          Now let's compute the raw attention scores for the token <strong>"cat"</strong> (Q = [0.9, 0.3]) against every other token's Key:
+        </p>
+
+        <div class="step-box">
+          <div class="step-hd">cat's raw scores (Q_cat · K_j for each j)</div>
+          <div class="step-eq">
+            vs "The":  (0.9×0.1) + (0.3×0.1) = 0.09 + 0.03 = <span class="hl-r">0.12</span>
+            <br>vs "cat":  (0.9×0.8) + (0.3×0.4) = 0.72 + 0.12 = <span class="hl-r">0.84</span>&nbsp;← self
+            <br>vs "sat":  (0.9×0.1) + (0.3×0.7) = 0.09 + 0.21 = <span class="hl-r">0.30</span>
+            <br>vs "on":   (0.9×0.1) + (0.3×0.0) = 0.09 + 0.00 = <span class="hl-r">0.09</span>
+            <br>vs "the":  (0.9×0.1) + (0.3×0.1) = 0.09 + 0.03 = <span class="hl-r">0.12</span>
+            <br>vs "mat":  (0.9×0.3) + (0.3×0.8) = 0.27 + 0.24 = <span class="hl-r">0.51</span>&nbsp;← second strongest
+          </div>
+        </div>
+
+        <p>
+          "cat" attends most strongly to itself (0.84) and to "mat" (0.51). That makes semantic sense — the subject (cat) is semantically related to the object (mat) in this sentence.
+        </p>
+
+        <h3>Step 3: Scale by √d_k</h3>
+        <p>
+          When the Key/Query dimension d<sub>k</sub> is large (e.g., 64 or 128), the raw dot products grow large in magnitude, which pushes softmax into a regime where it produces very sharp (near-0 or near-1) gradients that are hard to train. The fix: divide all scores by √d<sub>k</sub> before passing to softmax.
+        </p>
+        <p>
+          In our tiny 2D example: √d<sub>k</sub> = √2 ≈ 1.41. So our scaled scores for "cat" become:
+        </p>
+        <div class="step-box">
+          <div class="step-hd">Scaled scores (divide by √2 ≈ 1.41)</div>
+          <div class="step-eq">
+            "The": 0.12/1.41 ≈ <span class="hl-r">0.085</span>&nbsp;&nbsp;
+            "cat": 0.84/1.41 ≈ <span class="hl-r">0.596</span>&nbsp;&nbsp;
+            "sat": 0.30/1.41 ≈ <span class="hl-r">0.213</span>
+            <br>"on":  0.09/1.41 ≈ <span class="hl-r">0.064</span>&nbsp;&nbsp;
+            "the": 0.12/1.41 ≈ <span class="hl-r">0.085</span>&nbsp;&nbsp;
+            "mat": 0.51/1.41 ≈ <span class="hl-r">0.362</span>
+          </div>
+        </div>
+
+        <h3>Step 4: Softmax → attention weights</h3>
+        <p>
+          Apply softmax to the scaled scores. This converts them to a probability distribution: all weights positive, summing to 1.
+        </p>
+        <div class="step-box">
+          <div class="step-hd">Softmax of scaled scores (approximate)</div>
+          <div class="step-eq">
+            Exponentiate: e^0.085≈1.09, e^0.596≈1.81, e^0.213≈1.24, e^0.064≈1.07, e^0.085≈1.09, e^0.362≈1.44
+            <br>Sum ≈ 7.74
+            <br><br>
+            Attention weights for "cat":
+            <br>"The" → <span class="hl-r">1.09/7.74</span> ≈ <span class="hl-ans">0.14</span>
+            <br>"cat" → <span class="hl-r">1.81/7.74</span> ≈ <span class="hl-ans">0.23</span>
+            <br>"sat" → <span class="hl-r">1.24/7.74</span> ≈ <span class="hl-ans">0.16</span>
+            <br>"on"  → <span class="hl-r">1.07/7.74</span> ≈ <span class="hl-ans">0.14</span>
+            <br>"the" → <span class="hl-r">1.09/7.74</span> ≈ <span class="hl-ans">0.14</span>
+            <br>"mat" → <span class="hl-r">1.44/7.74</span> ≈ <span class="hl-ans">0.19</span>
+          </div>
+        </div>
+
+        <p>
+          "cat" pays most attention to itself (23%) and "mat" (19%), with attention spread more evenly over the function words. This is the attention distribution for a single head in a toy example — in a real model with real data, the weights would be far more concentrated.
+        </p>
+        <p>
+          Visualised as a heatmap (rows = which token is querying, columns = which token is being attended to):
+        </p>
+
+        <div class="attn-grid tablewrap">
+          <table>
+            <thead>
+              <tr><th>↓ token \ attends to →</th><th>The</th><th>cat</th><th>sat</th><th>on</th><th>the</th><th>mat</th></tr>
+            </thead>
+            <tbody>
+              <tr><td style="font-weight:600;font-family:'JetBrains Mono',monospace">The</td>
+                  <td class="attn-heat-3">0.28</td><td class="attn-heat-1">0.18</td><td class="attn-heat-1">0.14</td><td class="attn-heat-1">0.13</td><td class="attn-heat-1">0.14</td><td class="attn-heat-1">0.13</td></tr>
+              <tr><td style="font-weight:600;font-family:'JetBrains Mono',monospace">cat</td>
+                  <td class="attn-heat-1">0.14</td><td class="attn-heat-3">0.23</td><td class="attn-heat-1">0.16</td><td class="attn-heat-1">0.14</td><td class="attn-heat-1">0.14</td><td class="attn-heat-2">0.19</td></tr>
+              <tr><td style="font-weight:600;font-family:'JetBrains Mono',monospace">sat</td>
+                  <td class="attn-heat-0">0.11</td><td class="attn-heat-2">0.19</td><td class="attn-heat-3">0.24</td><td class="attn-heat-1">0.15</td><td class="attn-heat-1">0.16</td><td class="attn-heat-2">0.15</td></tr>
+              <tr><td style="font-weight:600;font-family:'JetBrains Mono',monospace">on</td>
+                  <td class="attn-heat-1">0.17</td><td class="attn-heat-1">0.17</td><td class="attn-heat-1">0.17</td><td class="attn-heat-3">0.25</td><td class="attn-heat-1">0.17</td><td class="attn-heat-0">0.07</td></tr>
+              <tr><td style="font-weight:600;font-family:'JetBrains Mono',monospace">the</td>
+                  <td class="attn-heat-2">0.19</td><td class="attn-heat-1">0.16</td><td class="attn-heat-1">0.15</td><td class="attn-heat-1">0.14</td><td class="attn-heat-3">0.22</td><td class="attn-heat-1">0.14</td></tr>
+              <tr><td style="font-weight:600;font-family:'JetBrains Mono',monospace">mat</td>
+                  <td class="attn-heat-0">0.09</td><td class="attn-heat-2">0.21</td><td class="attn-heat-1">0.17</td><td class="attn-heat-1">0.13</td><td class="attn-heat-1">0.13</td><td class="attn-heat-4">0.27</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:.82rem;color:var(--text-3)">Darker = more attention. The diagonal (self-attention) is typically strong; semantic relationships create off-diagonal peaks.</p>
+
+        <h3>Step 5: Weighted sum of Values</h3>
+        <p>
+          Now we use the attention weights to blend the <em>Value</em> vectors. For each query token, the new representation is the weighted sum of all Value vectors:
+        </p>
+
+        <div class="formula-box">
+          <div class="formula-label">New representation for token i</div>
+          output<sub>i</sub> = Σ<sub>j</sub> (attention_weight<sub>ij</sub> × V<sub>j</sub>)
+        </div>
+
+        <p>
+          For "cat" (using our weights: 0.14, 0.23, 0.16, 0.14, 0.14, 0.19):
+        </p>
+        <div class="step-box">
+          <div class="step-hd">New vector for "cat" = weighted blend of all Value vectors</div>
+          <div class="step-eq">
+            output_cat = 0.14 × V_"The"
+                       + <span class="hl-r">0.23</span> × V_"cat"&nbsp;&nbsp;&nbsp;&nbsp;← own value, highest weight
+                       + 0.16 × V_"sat"
+                       + 0.14 × V_"on"
+                       + 0.14 × V_"the"
+                       + <span class="hl-c">0.19</span> × V_"mat"&nbsp;&nbsp;&nbsp;&nbsp;← second highest
+          </div>
+        </div>
+
+        <p>
+          The vector for "cat" has now been enriched. It still encodes "cat-ness" but it has borrowed information from "mat" (the physical surface), from "sat" (the action), and from the article "the" (specificity). This richer vector flows into the next layer.
+        </p>
+
+        <h3>The complete attention formula</h3>
+
+        <div class="formula-box">
+          <div class="formula-label">Scaled Dot-Product Attention (Vaswani et al., 2017)</div>
+          Attention(Q, K, V) = softmax( Q K<sup>T</sup> / √d<sub>k</sub> ) × V
+        </div>
+
+        <p>
+          In matrix form: Q, K, V are matrices where each row is the Q/K/V vector for one token. <code>Q K<sup>T</sup></code> computes all pairwise dot products in one matrix multiplication — this is an n×n matrix (where n is sequence length). Each row of that matrix, after scaling and softmax, is the attention distribution for one token. Multiplying by V blends the values according to those weights.
+        </p>
+
+        <h3>Multi-head attention: multiple perspectives at once</h3>
+        <p>
+          A single attention head can only learn one "type" of relationship at a time — maybe it specialises in tracking subjects, or in resolving pronouns, or in syntactic dependencies. <strong>Multi-head attention</strong> runs <em>h</em> attention heads in parallel (each with its own W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> matrices), then concatenates their outputs and projects back to the full embedding dimension.
+        </p>
+
+        <figure class="diagram">
+          <svg viewBox="0 0 540 200" role="img" aria-label="Multi-head attention: h parallel attention heads concatenated">
+            <text x="30" y="30" font-size="11" fill="var(--text-2)" font-weight="600">Input embeddings</text>
+            <rect x="10" y="40" width="80" height="24" rx="3" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="50" y="56" text-anchor="middle" font-size="9" fill="var(--text-2)">E ∈ R^(n×d)</text>
+
+            <!-- Three head boxes -->
+            <line x1="90" y1="52" x2="140" y2="52" stroke="var(--border)"/>
+            <line x1="115" y1="52" x2="115" y2="85" stroke="var(--border)"/>
+            <line x1="115" y1="52" x2="115" y2="120" stroke="var(--border)"/>
+            <line x1="115" y1="52" x2="115" y2="155" stroke="var(--border)"/>
+            <line x1="115" y1="85" x2="140" y2="85" stroke="var(--border)"/>
+            <line x1="115" y1="120" x2="140" y2="120" stroke="var(--border)"/>
+            <line x1="115" y1="155" x2="140" y2="155" stroke="var(--border)"/>
+
+            <rect x="140" y="38" width="100" height="28" rx="4" fill="var(--accent)" opacity=".85"/>
+            <text x="190" y="56" text-anchor="middle" font-size="9" fill="white" font-weight="600">Head 1: Subject→Verb</text>
+            <rect x="140" y="73" width="100" height="28" rx="4" fill="var(--accent)" opacity=".65"/>
+            <text x="190" y="91" text-anchor="middle" font-size="9" fill="white" font-weight="600">Head 2: Pronoun Ref.</text>
+            <rect x="140" y="108" width="100" height="28" rx="4" fill="var(--accent)" opacity=".5"/>
+            <text x="190" y="126" text-anchor="middle" font-size="9" fill="white" font-weight="600">Head 3: Nearby words</text>
+            <rect x="140" y="143" width="100" height="28" rx="4" fill="var(--accent)" opacity=".35"/>
+            <text x="190" y="161" text-anchor="middle" font-size="9" fill="white" font-weight="600">Head h: …</text>
+
+            <!-- Concat -->
+            <line x1="240" y1="52" x2="270" y2="100" stroke="var(--border)"/>
+            <line x1="240" y1="87" x2="270" y2="100" stroke="var(--border)"/>
+            <line x1="240" y1="122" x2="270" y2="100" stroke="var(--border)"/>
+            <line x1="240" y1="157" x2="270" y2="100" stroke="var(--border)"/>
+            <rect x="270" y="80" width="80" height="38" rx="4" fill="var(--surface-2)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="310" y="97" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="600">Concat</text>
+            <text x="310" y="110" text-anchor="middle" font-size="9" fill="var(--text-3)">[h1|h2|h3|…]</text>
+
+            <!-- Project -->
+            <line x1="350" y1="99" x2="380" y2="99" stroke="var(--border)"/>
+            <rect x="380" y="80" width="80" height="38" rx="4" fill="#f59e0b" opacity=".85"/>
+            <text x="420" y="97" text-anchor="middle" font-size="9" fill="white" font-weight="600">× W_O</text>
+            <text x="420" y="110" text-anchor="middle" font-size="9" fill="white">project back</text>
+
+            <!-- Output -->
+            <line x1="460" y1="99" x2="490" y2="99" stroke="var(--border)"/>
+            <rect x="490" y="80" width="48" height="38" rx="4" fill="var(--surface-2)" stroke="var(--border)"/>
+            <text x="514" y="97" text-anchor="middle" font-size="9" fill="var(--text-2)" font-weight="600">Output</text>
+            <text x="514" y="110" text-anchor="middle" font-size="9" fill="var(--text-3)">R^(n×d)</text>
+          </svg>
+          <figcaption><b>Multi-head attention.</b> h heads run in parallel, each learning a different relationship type. Their outputs are concatenated and projected back to the embedding dimension with W<sub>O</sub>.</figcaption>
+        </figure>
+
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · a panel of experts reviewing a document</div>
+          <p>Imagine your document review team has 32 specialists. Expert 1 looks for grammar structure. Expert 2 looks for co-references ("she" refers to "Alice"). Expert 3 tracks topic continuity. Expert 4 looks at named entities. They all read the same document simultaneously and write their annotations. Then a coordinator (the W<sub>O</sub> projection) synthesises all 32 annotation layers into a single unified, enriched understanding of the document. Multi-head attention is the same idea.</p>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="full-pass">Part 6 — The full forward pass, end to end</h2>
+
+        <p>Let's trace a single token — the word <strong>"river"</strong> in the sentence "She sat by the <strong>river</strong> bank." — through an entire Transformer block.</p>
+
+        <div class="pipeline">
+          <div class="pipeline__step">
+            <div class="ps-label">1. Tokenize</div>
+            <div class="ps-desc">"river" → token ID 14287</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">2. Embed</div>
+            <div class="ps-desc">ID 14287 → row 14287 of embedding table → vector in R^4096</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">3. + Positional</div>
+            <div class="ps-desc">Add RoPE rotation encoding for position 5 in the sequence</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">4. Layer Norm</div>
+            <div class="ps-desc">Normalise the vector so values have mean 0, std 1</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">5. Attention</div>
+            <div class="ps-desc">Compute Q, K, V. Score against all other tokens. Blend Values. "bank" context shifts this token's vector.</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">6. + Residual</div>
+            <div class="ps-desc">Add the original pre-attention vector back (skip connection)</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">7. FFN</div>
+            <div class="ps-desc">Two matrix multiplications with a nonlinearity between them. Expands to 16384, compresses back to 4096.</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">8. × 32 layers</div>
+            <div class="ps-desc">Repeat steps 4–7 for each of the 32 Transformer layers</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">9. Unembed</div>
+            <div class="ps-desc">Final vector × (embedding table)^T → scores for all 128K vocab tokens</div>
+          </div>
+          <div class="pipeline__arrow">→</div>
+          <div class="pipeline__step">
+            <div class="ps-label">10. Softmax</div>
+            <div class="ps-desc">Scores → probabilities. Sample or pick the top token. Print it.</div>
+          </div>
+        </div>
+
+        <h3>What the layers actually learn</h3>
+        <p>
+          Early layers tend to capture surface-level syntax: word boundaries, POS tags, nearby word relationships. Middle layers capture semantics: word sense, named entities, coreference. Later layers capture task-specific reasoning: what the right next word should be given everything the model knows. This isn't hand-designed — it emerges from training.
+        </p>
+        <p>
+          Researchers have found (by probing individual layer activations) that in a 32-layer model, layer 5 might encode grammatical gender, layer 15 might encode named-entity type, and layer 28 might encode factual knowledge. The representations become progressively more abstract and task-oriented as they flow through the stack.
+        </p>
+
+        <h3>The FFN layer: where facts live</h3>
+        <p>
+          The Feed-Forward Network (FFN) that follows attention in each block deserves mention. It's two matrix multiplications with a nonlinearity (often SwiGLU or GELU) between them. It expands the hidden dimension (4,096 → 16,384) then contracts it back.
+        </p>
+        <p>
+          Research suggests the FFN layers act as "factual databases." If the model knows that "Paris is the capital of France," that fact is encoded in specific weight patterns in the FFN layers, not in the attention weights. Attention decides <em>which</em> facts to retrieve based on context; the FFN holds the facts themselves.
+        </p>
+        <div class="callout callout--analogy">
+          <div class="callout__tag">Analogy · RAM vs CPU cache</div>
+          <p>Attention is like a <strong>cache-lookup</strong>: it rapidly identifies which parts of the current context are relevant and pulls them together. The FFN is like <strong>long-term memory (RAM)</strong>: it holds the stored knowledge from training. The two together give the model both contextual awareness and background knowledge.</p>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="parameters">Part 7 — Where do the matrices come from?</h2>
+        <p>
+          Every number in every W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>, W<sub>O</sub>, and FFN matrix is a <strong>learned parameter</strong>. A "7B parameter model" literally has 7 billion of these numbers. Before training, they're initialised randomly (small random values near zero). During training, the model sees billions of text examples and uses backpropagation + gradient descent to nudge each parameter slightly, in the direction that reduces its prediction error.
+        </p>
+        <p>
+          Over trillions of training steps, the matrices sculpt themselves into configurations that produce excellent next-token predictions. The representations, the attention patterns, the factual knowledge — it all emerges from this one repeated operation: <em>predict the next token, measure how wrong you were, nudge all 7B parameters a tiny amount in the direction of being less wrong.</em>
+        </p>
+        <div class="callout callout--win">
+          <div class="callout__tag">The fundamental insight</div>
+          <p>There is no "understanding" module. There is no "knowledge graph" wired in by hand. Everything the model knows — syntax, semantics, facts, reasoning patterns, code, maths — is encoded in 7 billion floats, distributed across hundreds of weight matrices, learned entirely from predicting which word comes next in human text. The sophistication of the result given the simplicity of the objective is the genuinely remarkable thing.</p>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <h2 id="recap">Recap</h2>
+        <ul>
+          <li><strong>Vectors</strong> are lists of numbers. Words become vectors via an embedding table — similar words land near each other in the resulting space. Real models use 4,096+ dimensional vectors.</li>
+          <li>The <strong>dot product</strong> (multiply pairs, sum them up) measures how aligned two vectors are. It's the building block of both matrix multiplication and attention.</li>
+          <li><strong>Matrix multiplication</strong> applies many dot products simultaneously — each row of the matrix is one "filter" applied to the input vector. An m×n matrix transforms an n-dim vector into an m-dim vector. Nothing more.</li>
+          <li><strong>Softmax</strong> converts raw scores into probabilities (positive, sum to 1). Temperature controls how peaked the distribution is.</li>
+          <li><strong>Attention</strong> gives each token three roles: Query (what am I looking for?), Key (what do I offer?), Value (what payload do I share?). Raw scores = Q·K<sup>T</sup>, scaled by √d<sub>k</sub>, then softmax'd into weights, then used to blend the Values. The result is a context-aware representation of each token.</li>
+          <li><strong>Multi-head attention</strong> runs h parallel attention heads, each learning a different relationship type, then concatenates and projects their outputs.</li>
+          <li>The full forward pass: embed → add positional encoding → (layer norm → attention → residual → FFN → residual) × N layers → unembed → softmax → sample.</li>
+          <li>Every weight matrix was initialised randomly and learned through gradient descent on the next-token prediction objective. All of the model's knowledge is distributed across those numbers.</li>
+        </ul>
+      </article>
+
+      <nav class="pager" id="pager"></nav>
+    </main>
+
+    <aside class="rail">
+      <div class="rail__label">On this plate</div>
+      <nav id="rail-toc"></nav>
+    </aside>
+  </div>
+
+  <div class="modal" id="search-modal">
+    <div class="modal__scrim"></div>
+    <div class="modal__panel">
+      <div class="modal__input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="color:var(--text-3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search-input" type="text" placeholder="Search chapters, topics, jargon…" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="modal__results" id="search-results"></div>
+    </div>
+  </div>
+
+  <script>window.PAGE = { slug: "brainstorming-math" };</script>
+  <script src="../assets/js/nav.js"></script>
+  <script src="../assets/js/glossary.js"></script>
+  <script src="../assets/js/references.js"></script>
+  <script src="../assets/js/main.js"></script>
+</body>
+</html>
