@@ -71,6 +71,13 @@ HANDBOOK.chapters = [
   { num:"18", slug:"18-ecosystem-contributing", part:"VI · Using & Contributing",
     title:"The Ecosystem & How to Contribute",
     blurb:"The Hub, licenses, the papers to follow, and your first contribution.", tags:["meta"] },
+
+  { num:"19", slug:"brainstorming-runtimes",   part:"VII · Brainstorming",
+    title:"The Runtime Ecosystem",
+    blurb:"Brains vs. engines: how weights become a running chat interface. llama.cpp, Ollama, vLLM, GGUF.", tags:["deep-dive"] },
+  { num:"20", slug:"brainstorming-math",        part:"VII · Brainstorming",
+    title:"The Mathematical Soul",
+    blurb:"Vectors, matrices, and attention: how words become coordinates and talk to each other.", tags:["deep-dive"] },
 ];
 
 /* ---- path helpers: make links work whether we're at root or in /chapters/ ---- */
