@@ -19,8 +19,8 @@
   function initTheme() {
     var saved = null;
     try { saved = localStorage.getItem("fg-theme"); } catch (e) {}
-    var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var theme = saved || (prefersDark ? "dark" : "light");
+    // Default to light for everyone; dark is opt-in via the toggle (persisted in localStorage).
+    var theme = saved || "light";
     document.documentElement.setAttribute("data-theme", theme);
   }
   function toggleTheme() {
