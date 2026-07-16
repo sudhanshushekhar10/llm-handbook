@@ -148,6 +148,35 @@ HANDBOOK.renderPager = function (mountSel, currentSlug) {
   mount.innerHTML = html;
 };
 
+/* ---- author byline centered in the fixed top bar (always visible, every page) ---- */
+HANDBOOK.renderByline = function () {
+  var bar = document.querySelector(".topbar");
+  if (!bar || bar.querySelector(".topbar__center")) return;
+  var b = document.createElement("div");
+  b.className = "topbar__center";
+  b.innerHTML = "by <b>Sudhanshu Shekhar</b>";
+  bar.appendChild(b);
+};
+
+/* ---- site-wide authorship footer (rendered on every page from one source) ---- */
+HANDBOOK.renderFooter = function () {
+  if (document.querySelector(".sitefooter")) return;
+  var aboutHref = HANDBOOK.rootHref("index.html") + "#about";
+  var f = document.createElement("footer");
+  f.className = "sitefooter";
+  f.innerHTML =
+    '<div class="sitefooter__inner">' +
+      "<span>&copy; 2026 <b>Sudhanshu Shekhar</b></span>" +
+      '<span class="sitefooter__dot">&middot;</span>' +
+      "<span><i>The Engineer&rsquo;s Field Guide to LLMs</i></span>" +
+      '<span class="sitefooter__dot">&middot;</span>' +
+      '<a href="https://creativecommons.org/licenses/by-nc/4.0/" target="_blank" rel="noopener">Licensed CC BY-NC 4.0</a>' +
+      '<span class="sitefooter__dot">&middot;</span>' +
+      '<a href="' + aboutHref + '">About the author</a>' +
+    "</div>";
+  document.body.appendChild(f);
+};
+
 /* ---- search index: chapters + (optional) per-page sections ---- */
 HANDBOOK.searchIndex = function () {
   var idx = HANDBOOK.chapters.map(function (c) {

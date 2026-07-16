@@ -290,6 +290,8 @@
     initMobileNav();
     renderGlossaryPage();
     renderReferencesPage();
+    if (H.renderByline) H.renderByline();
+    if (H.renderFooter) H.renderFooter();
   });
 
   window.FG = { toggleTheme: toggleTheme };
