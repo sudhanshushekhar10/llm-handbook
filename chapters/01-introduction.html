@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 01 · The Mental Model — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The Mental Model — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="What a model actually is, in terms a backend engineer already owns.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/01-introduction.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Mental Model — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="What a model actually is, in terms a backend engineer already owns.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Reframe what a language model actually is — a pure function mapping tokens to probabilities — in terms every backend engineer already owns.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,10 +53,10 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 01 · Part I — Foundations</div>
           <h1>The Mental Model</h1>
-          <p class="standfirst">Before you touch a line of code, you need a sharp mental model of what a language model actually <em>is</em> — not the marketing pitch, but the engineering reality. It's a function. A big one. And that reframe changes everything.</p>
+          <p class="standfirst">Before you touch a line of code, you need a sharp mental model of what a language model actually <em>is</em>, not the marketing pitch, but the engineering reality. It's a function. A big one. And that reframe changes everything.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 12 min</span>
-            <span><b>Prereqs</b> · None — start here</span>
+            <span><b>Prereqs</b> · None: start here</span>
             <span><b>Code</b> · transformers</span>
           </div>
         </div>
@@ -52,12 +64,12 @@
         <h2 id="software-1-vs-2">Software 1.0 vs 2.0: code you write vs weights you grow</h2>
         <p>
           In 2017 Andrej Karpathy coined the phrase <strong>Software 2.0</strong> for a shift that was already happening
-          underfoot. In the old world — Software 1.0 — a programmer writes explicit rules: <code>if sentiment == "positive"
+          underfoot. In the old world (Software 1.0), a programmer writes explicit rules: <code>if sentiment == "positive"
           then score += 1</code>. The program is a text file you can read, diff, and reason about. You author it.
         </p>
         <p>
           Software 2.0 inverts this. You don't write the rules; you write the <em>objective</em> and collect
-          <em>examples</em>. Then you run an optimization process — training — that searches for a set of numbers
+          <em>examples</em>. Then you run an optimization process, training, that searches for a set of numbers
           (the <span class="gloss" data-term="parameter">parameters</span>, or weights) that minimize your objective
           across those examples. The rules are never written explicitly. They are <em>inferred</em> from data and encoded
           as billions of floating-point numbers inside a file.
@@ -67,7 +79,7 @@
           <div class="callout__tag">Analogy · grown, not written</div>
           <p>Think of the difference between hand-crafting a regex to parse addresses (Software 1.0) versus training a model
           on a million labelled address strings and letting it figure out the rules (Software 2.0). In the first case your
-          logic lives in your source code. In the second it lives in a weight matrix — a set of numbers that <em>implicitly</em>
+          logic lives in your source code. In the second it lives in a weight matrix: a set of numbers that <em>implicitly</em>
           encode a pattern you never had to articulate. The surprising thing is that this approach, scaled up, generalizes
           far beyond what any hand-crafted ruleset could.</p>
         </div>
@@ -76,8 +88,8 @@
           This isn't just a philosophical difference. It changes what "debugging" means, what "deploying" means, and
           what "versioning" means. Instead of shipping a new release of your service, you might ship a new
           <span class="gloss" data-term="fine-tuning">fine-tuned</span> model file. Instead of adding an <code>if</code>
-          branch to handle a new case, you add training examples. The mental models you built in Software 1.0 still apply
-          — but the artefacts are different.
+          branch to handle a new case, you add training examples. The mental models you built in Software 1.0 still apply,
+          but the artefacts are different.
         </p>
 
         <h2 id="a-very-large-function">A model is just a (very large) function</h2>
@@ -89,15 +101,15 @@
         </blockquote>
         <p>
           You pass in a sequence of <span class="gloss" data-term="token">tokens</span> (integers representing chunks of
-          text — more on this in Plate 04). The function runs some arithmetic and returns a vector of scores, one per word
+          text; more on this in Plate 04). The function runs some arithmetic and returns a vector of scores, one per word
           in the model's vocabulary. After a <code>softmax</code>, those scores become probabilities: <em>given everything
           I've seen so far, here's how likely each possible next word is.</em>
         </p>
         <p>
-          Those raw scores are called <span class="gloss" data-term="logits">logits</span> — a term borrowed from statistics
+          Those raw scores are called <span class="gloss" data-term="logits">logits</span>: a term borrowed from statistics
           that just means "unnormalized log-probabilities." The function that produces them is
-          a <span class="gloss" data-term="transformer">Transformer</span><a class="cite" data-ref="vaswani2017"></a> —
-          a specific neural-network architecture — and its weights are the learned
+          a <span class="gloss" data-term="transformer">Transformer</span><a class="cite" data-ref="vaswani2017"></a>
+          (a specific neural-network architecture), and its weights are the learned
           <span class="gloss" data-term="parameter">parameters</span>: typically billions of them, each a 16- or 32-bit float.
         </p>
 
@@ -105,19 +117,19 @@
           <div class="callout__tag">From a software-eng POV</div>
           <p>A model is a <strong>pure function with no side effects</strong>. Give it the same input, get the same logits
           back every time (during <span class="gloss" data-term="inference">inference</span> with deterministic settings).
-          The "intelligence" isn't hidden state or a database query — it's entirely encoded in the weight matrices
+          The "intelligence" isn't hidden state or a database query; it's entirely encoded in the weight matrices
           that parameterize the function. The model file is your build artifact: immutable, versioned, deployable.</p>
         </div>
 
         <p>
           The function is <span class="gloss" data-term="autoregressive">autoregressive</span>: to generate a full
           sentence, you call it once to get the first token, append that token to the input, call it again, and repeat.
-          Each call is <em>one forward pass</em> — thousands of matrix multiplications, executed in parallel on a GPU.
+          Each call is <em>one forward pass</em>: thousands of matrix multiplications, executed in parallel on a GPU.
           The "text" you see is just the model calling itself over and over, each time looking at everything it has produced
           so far, plus your original <span class="gloss" data-term="prompt">prompt</span>.
         </p>
 
-        <h2 id="three-verbs">Train, infer, fine-tune — the three verbs</h2>
+        <h2 id="three-verbs">Train, infer, fine-tune: the three verbs</h2>
         <p>
           The entire LLM world is organized around three operations. Get these straight and the rest of this guide
           clicks into place.
@@ -130,7 +142,7 @@
               <tr>
                 <td><strong>Pretraining</strong></td>
                 <td>Run gradient descent on trillions of tokens of text; the weights are adjusted to predict each next token. This is where the model "learns" language, facts, code, and reasoning patterns.</td>
-                <td>A handful of labs (OpenAI, Meta, Google, Mistral…) — costs millions of dollars of GPU time</td>
+                <td>A handful of labs (OpenAI, Meta, Google, Mistral…); costs millions of dollars of GPU time</td>
                 <td>Compiling the OS from scratch</td>
               </tr>
               <tr>
@@ -141,7 +153,7 @@
               </tr>
               <tr>
                 <td><strong>Fine-tuning</strong></td>
-                <td>Continue training — but on a smaller, curated dataset, to steer the model toward a specific task or style. Weights change again, but starting from a pretrained checkpoint.</td>
+                <td>Continue training, but on a smaller, curated dataset, to steer the model toward a specific task or style. Weights change again, but starting from a pretrained checkpoint.</td>
                 <td>Teams customizing a base model for their domain or safety requirements</td>
                 <td>Patching or extending a library</td>
               </tr>
@@ -153,14 +165,14 @@
           <span class="gloss" data-term="pretraining">Pretraining</span> is the expensive, once-per-model-generation step.
           Everything else in this guide is downstream of it. When someone says "GPT-4" or "Llama 3," they mean a specific
           set of frozen weights that resulted from one enormous pretraining run<a class="cite" data-ref="brown2020"></a>.
-          Inference is the everyday operation — it's what runs when you hit the API. Fine-tuning sits between the two:
+          Inference is the everyday operation; it's what runs when you hit the API. Fine-tuning sits between the two:
           cheaper than pretraining by many orders of magnitude, but it does change the weights, so you end up with a new
           model file.
         </p>
 
         <p>
           Sampling is the step that makes inference feel non-deterministic. After you have a probability distribution
-          over the next token, you could take the highest-probability token every time (greedy decoding) — but that produces
+          over the next token, you could take the highest-probability token every time (greedy decoding), but that produces
           repetitive, robotic text. Instead you <em>sample</em>: draw from the distribution, biased by a
           <span class="gloss" data-term="temperature">temperature</span> knob. Turn temperature up and you get more creative
           (more randomness); turn it down to zero and you're back to greedy. Same weights, different sampling strategy,
@@ -169,13 +181,13 @@
 
         <h2 id="where-models-live">Where models actually live: files, frameworks, GPUs</h2>
         <p>
-          A language model is, at its core, a file — or rather a collection of files. The weights are usually serialized
+          A language model is, at its core, a file, or rather a collection of files. The weights are usually serialized
           as <span class="gloss" data-term="tensor">tensors</span> (multi-dimensional arrays of floats) in a format like
           <code>safetensors</code> or the older <code>pytorch_model.bin</code>. A 7-billion-parameter model
           in 16-bit precision occupies roughly 14 GB on disk and in VRAM (GPU memory). A 70B model: around 140 GB.
         </p>
         <p>
-          The code that runs those weights is almost universally <span class="gloss" data-term="pytorch">PyTorch</span> —
+          The code that runs those weights is almost universally <span class="gloss" data-term="pytorch">PyTorch</span>:
           a Python library from Meta that treats tensors as first-class objects, runs operations on GPUs via
           <span class="gloss" data-term="cuda">CUDA</span> (NVIDIA's GPU programming layer), and tracks gradients for
           training. You don't typically write raw PyTorch for inference; you use
@@ -183,7 +195,7 @@
           library, which wraps models in a consistent API and handles the tokenization, batching, and sampling for you.
         </p>
         <p>
-          On Apple Silicon machines, CUDA is replaced by MPS (Metal Performance Shaders) — Apple's GPU compute layer.
+          On Apple Silicon machines, CUDA is replaced by MPS (Metal Performance Shaders), Apple's GPU compute layer.
           Smaller models (up to ~13B parameters) run comfortably on a MacBook Pro M-series, which is a surprisingly
           capable inference machine for development and experimentation.
         </p>
@@ -224,14 +236,14 @@ token in a sequence, which allows it to generate coherent text.
 
         <h2 id="predictor-not-database">It's a predictor, not a database</h2>
         <p>
-          The most important thing to internalize — and the source of the most frustrating bugs — is that a language model
+          The most important thing to internalize (and the source of the most frustrating bugs) is that a language model
           has no memory and no source of truth. It is a <em>predictor</em>: it returns whatever sequence of tokens is most
           probable given its training data. It has no index to look up, no database to query, no verified facts to serve.
         </p>
         <p>
           This is why <span class="gloss" data-term="hallucination">hallucination</span> is not a bug that will be fixed
           in the next version. It is a <em>structural property</em> of the architecture. The model learned that after
-          "The capital of France is" the token "Paris" is very likely — but it learned this by observing the statistical
+          "The capital of France is" the token "Paris" is very likely, but it learned this by observing the statistical
           pattern in text, not by consulting a gazetteer. For common, frequently-discussed facts this correlation is
           reliable. For obscure facts, recent events, or precise figures, the model will confidently produce the most
           plausible-sounding continuation regardless of whether it is true.
@@ -240,7 +252,7 @@ token in a sequence, which allows it to generate coherent text.
         <div class="callout callout--gotcha">
           <div class="callout__tag">Gotcha · predictor, not database</div>
           <p>A model that says "the function <code>str.format()</code> takes a <code>locale</code> argument" sounds
-          authoritative and is completely wrong. It produced the most statistically plausible API description —
+          authoritative and is completely wrong. It produced the most statistically plausible API description,
           but plausibility is not accuracy. Treat every factual claim as a draft that needs verification. This is not a
           temporary limitation; it follows directly from what a model <em>is</em>. Solutions (RAG, tool use, citations)
           work around it, but do not eliminate it.</p>
@@ -249,7 +261,7 @@ token in a sequence, which allows it to generate coherent text.
         <p>
           This distinction maps cleanly onto something engineers already know: a model is closer to a <em>compiler
           learned from code examples</em> than to a <em>database</em>. A compiler that learned patterns might produce
-          syntactically valid output that is semantically wrong. That's exactly what happens here — the output is
+          syntactically valid output that is semantically wrong. That's exactly what happens here: the output is
           grammatically and stylistically fluent, but the facts it expresses are unchecked.
         </p>
 
@@ -263,7 +275,7 @@ token in a sequence, which allows it to generate coherent text.
         </p>
         <p>
           Each plate is self-contained and ends with a Recap. You can read sequentially or jump to what you need.
-          Code blocks show real, runnable Python — copy them directly. Glossary terms (dotted underline) show a tooltip
+          Code blocks show real, runnable Python; copy them directly. Glossary terms (dotted underline) show a tooltip
           on hover; citations link to the full reference list.
         </p>
         <p>
@@ -274,15 +286,15 @@ token in a sequence, which allows it to generate coherent text.
 
         <h2 id="recap">Recap</h2>
         <ul>
-          <li><strong>Software 2.0:</strong> a model's "logic" is not written — it is inferred from data via training and encoded as billions of floating-point weights.</li>
+          <li><strong>Software 2.0:</strong> a model's "logic" is not written; it is inferred from data via training and encoded as billions of floating-point weights.</li>
           <li>A language model is a <strong>pure function</strong>: tokens in → probability distribution over the next token out. Same input, same logits. No side effects.</li>
           <li><strong>Autoregressive generation</strong> means calling that function token-by-token, feeding each new output back as input, until you have a full response.</li>
           <li>The three key verbs: <strong>pretraining</strong> (grow the weights from scratch), <strong>inference</strong> (call the frozen function), <strong>fine-tuning</strong> (continue training to adapt).</li>
           <li>A model is a <strong>file of numbers</strong> plus a little PyTorch code to run it. Hugging Face's <code>transformers</code> library provides the standard API; GPUs (CUDA or MPS) provide the compute.</li>
-          <li>A model is a <strong>predictor, not a database</strong>. Hallucination is structural, not a bug — it follows from predicting plausible continuations rather than retrieving verified facts.</li>
+          <li>A model is a <strong>predictor, not a database</strong>. Hallucination is structural, not a bug; it follows from predicting plausible continuations rather than retrieving verified facts.</li>
         </ul>
         <p>
-          Next, Plate 02 rewinds the clock and traces how we got here — from counting word pairs in the 1940s to GPT-3's
+          Next, Plate 02 rewinds the clock and traces how we got here: from counting word pairs in the 1940s to GPT-3's
           emergence in 2020. The history is short but it explains almost every design choice you'll encounter in the rest
           of the guide.
         </p>

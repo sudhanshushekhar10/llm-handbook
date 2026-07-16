@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 19 · The Runtime Ecosystem — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The Runtime Ecosystem — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Brains vs. engines: how weights become a running chat interface. llama.cpp, Ollama, vLLM, GGUF.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/brainstorming-runtimes.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Runtime Ecosystem — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Brains vs. engines: how weights become a running chat interface. llama.cpp, Ollama, vLLM, GGUF.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="How model weights become a running chat interface: the distinction between brains (weights) and engines (runtimes), covering llama.cpp, Ollama, vLLM, GGUF, and Triton.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 19 · Part VII — Brainstorming</div>
           <h1>The Runtime Ecosystem: Brains vs. Engines</h1>
-          <p class="standfirst">A model file is not software — it's inert numbers on disk. The runtime is the program that breathes life into them. Understanding this split explains why the same Llama weights can run on a laptop, a cloud server, or a Raspberry Pi, each via a completely different engine.</p>
+          <p class="standfirst">A model file is not software: it's inert numbers on disk. The runtime is the program that breathes life into them. Understanding this split explains why the same Llama weights can run on a laptop, a cloud server, or a Raspberry Pi, each via a completely different engine.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 14 min</span>
             <span><b>Prereqs</b> · Plate 13 (Quantization &amp; GGUF)</span>
@@ -51,12 +63,12 @@
 
         <h2 id="brain-vs-engine">The core dichotomy: brain vs. engine</h2>
         <p>
-          The biggest misconception for newcomers is thinking that "Llama 3" or "Mistral" is a piece of software you install and run. It isn't. A model is a <em>collection of numbers</em> — billions of floating-point weights stored in a file. On their own they do nothing, the same way a JPEG file doesn't display itself. You need a separate program — a <strong>runtime engine</strong> — to load those weights and execute the matrix multiplications that produce text.
+          The biggest misconception for newcomers is thinking that "Llama 3" or "Mistral" is a piece of software you install and run. It isn't. A model is a <em>collection of numbers</em>: billions of floating-point weights stored in a file. On their own they do nothing, the same way a JPEG file doesn't display itself. You need a separate program (a <strong>runtime engine</strong>) to load those weights and execute the matrix multiplications that produce text.
         </p>
 
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · sheet music vs. piano</div>
-          <p>Sheet music is the <strong>model</strong> — a precise, portable description of a song (the weights). But sheet music makes no sound on its own. You need a <strong>piano</strong> (the runtime) to read those marks and turn them into actual music. A grand piano produces rich, full sound; a toy piano plays a simplified version; a digital synthesiser plays the same notes but with different characteristics. The music is identical across all three — the runtime determines how it's realised.</p>
+          <p>Sheet music is the <strong>model</strong>: a precise, portable description of a song (the weights). But sheet music makes no sound on its own. You need a <strong>piano</strong> (the runtime) to read those marks and turn them into actual music. A grand piano produces rich, full sound; a toy piano plays a simplified version; a digital synthesiser plays the same notes but with different characteristics. The music is identical across all three; the runtime determines how it's realised.</p>
         </div>
 
         <p>
@@ -110,13 +122,13 @@
 
         <h2 id="llama-cpp">llama.cpp: the local hero</h2>
         <p>
-          Meta released the original LLaMA model weights for research use. But the only way to run them was through PyTorch — which requires Python, CUDA drivers, and ideally an expensive NVIDIA GPU. It was completely inaccessible to anyone without a research-lab setup.
+          Meta released the original LLaMA model weights for research use. But the only way to run them was through PyTorch, which requires Python, CUDA drivers, and ideally an expensive NVIDIA GPU. It was completely inaccessible to anyone without a research-lab setup.
         </p>
         <p>
-          In March 2023, <strong>Georgi Gerganov</strong> released <span class="gloss" data-term="llama-cpp">llama.cpp</span>. He didn't create a new model. He wrote a completely new inference engine in C++ that reimplements all the necessary matrix maths from scratch, with no PyTorch dependency whatsoever. The result ran on a standard laptop CPU — including Apple Silicon via the Metal API.
+          In March 2023, <strong>Georgi Gerganov</strong> released <span class="gloss" data-term="llama-cpp">llama.cpp</span>. He didn't create a new model. He wrote a completely new inference engine in C++ that reimplements all the necessary matrix maths from scratch, with no PyTorch dependency whatsoever. The result ran on a standard laptop CPU, including Apple Silicon via the Metal API.
         </p>
         <div class="callout callout--win">
-          <div class="callout__tag">What won — and why</div>
+          <div class="callout__tag">What won, and why</div>
           <p>llama.cpp succeeded because it was written in C++ with hand-optimised memory layouts (quantized weights read directly from disk via mmap, no copy to RAM needed) and platform-specific SIMD instructions. It turned a 16 GB GPU requirement into a 4 GB RAM requirement for an equivalent 4-bit quantized model. This single project democratised local LLMs almost overnight.</p>
         </div>
         <p>
@@ -125,7 +137,7 @@
 
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>llama.cpp is the inference equivalent of writing a database engine from scratch in C instead of using an ORM. You lose the convenience of Python abstractions but gain precise control over memory layout, alignment, and cache behaviour — which matters enormously when your bottleneck is loading 4 GB of weights from DRAM for every forward pass.</p>
+          <p>llama.cpp is the inference equivalent of writing a database engine from scratch in C instead of using an ORM. You lose the convenience of Python abstractions but gain precise control over memory layout, alignment, and cache behaviour, which matters enormously when your bottleneck is loading 4 GB of weights from DRAM for every forward pass.</p>
         </div>
 
         <h2 id="gguf">GGUF: the universal container format</h2>
@@ -178,7 +190,7 @@ summarise documents, translate, and more...</code></pre>
 
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>Ollama is a <strong>service manager and model registry</strong> combined. It handles the full lifecycle: pulling a versioned model image from a registry (like Docker Hub, but for GGUF models), managing memory (loading the model on first request, unloading after idle timeout), and exposing a clean REST API. Other apps — Open WebUI, Continue.dev, LangChain — all connect to Ollama's endpoint rather than managing llama.cpp directly.</p>
+          <p>Ollama is a <strong>service manager and model registry</strong> combined. It handles the full lifecycle: pulling a versioned model image from a registry (like Docker Hub, but for GGUF models), managing memory (loading the model on first request, unloading after idle timeout), and exposing a clean REST API. Other apps (Open WebUI, Continue.dev, LangChain) all connect to Ollama's endpoint rather than managing llama.cpp directly.</p>
         </div>
 
         <h2 id="vllm">vLLM: production-grade GPU serving</h2>
@@ -186,12 +198,12 @@ summarise documents, translate, and more...</code></pre>
           While llama.cpp is optimised for <em>efficiency on a single user's machine</em>, production systems need to serve thousands of concurrent requests. This is where <span class="gloss" data-term="vllm">vLLM</span> comes in.
         </p>
         <p>
-          vLLM's core innovation is <strong>PagedAttention</strong><a class="cite" data-ref="kwon2023"></a> — a technique borrowed directly from how operating systems manage virtual memory. Standard inference pre-allocates a fixed KV cache block per request. This wastes GPU memory for short sequences and fails outright for long ones. PagedAttention divides the KV cache into small, fixed-size pages and allocates them on demand — like OS page tables for process memory. This allows vLLM to pack far more concurrent requests into the same GPU memory budget.
+          vLLM's core innovation is <strong>PagedAttention</strong><a class="cite" data-ref="kwon2023"></a>: a technique borrowed directly from how operating systems manage virtual memory. Standard inference pre-allocates a fixed KV cache block per request. This wastes GPU memory for short sequences and fails outright for long ones. PagedAttention divides the KV cache into small, fixed-size pages and allocates them on demand, like OS page tables for process memory. This allows vLLM to pack far more concurrent requests into the same GPU memory budget.
         </p>
 
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · OS virtual memory management</div>
-          <p>Traditional inference is like allocating a fixed-size parking garage bay for every car that might visit — even if most cars are compact, you reserve a full-size space. PagedAttention is like OS virtual memory: you hand out virtual addresses on demand, backed by physical pages only when actually needed. A process thinks it has a contiguous 8 GB address space; a request thinks it has a large KV cache. Neither knows the memory is fragmented and shared at the physical level.</p>
+          <p>Traditional inference is like allocating a fixed-size parking garage bay for every car that might visit, even if most cars are compact, you reserve a full-size space. PagedAttention is like OS virtual memory: you hand out virtual addresses on demand, backed by physical pages only when actually needed. A process thinks it has a contiguous 8 GB address space; a request thinks it has a large KV cache. Neither knows the memory is fragmented and shared at the physical level.</p>
         </div>
 
         <div class="tablewrap">
@@ -208,18 +220,18 @@ summarise documents, translate, and more...</code></pre>
 
         <h2 id="triton">Triton: the GPU kernel compiler</h2>
         <p>
-          Writing raw CUDA (C++) for GPUs is notoriously difficult. Every new attention variant or quantization scheme requires implementing custom CUDA kernels — low-level GPU programs that can take weeks to write and debug correctly.
+          Writing raw CUDA (C++) for GPUs is notoriously difficult. Every new attention variant or quantization scheme requires implementing custom CUDA kernels: low-level GPU programs that can take weeks to write and debug correctly.
         </p>
         <p>
           <strong>Triton</strong> (by OpenAI, not the inference server) is a Python-like language that compiles to GPU machine code as fast as hand-written CUDA. It lets researchers write a new attention kernel in Python, and the Triton compiler handles the low-level register allocation, memory coalescing, and thread scheduling.
         </p>
         <p>
-          <span class="gloss" data-term="flashattention">FlashAttention</span><a class="cite" data-ref="dao2022"></a> — the memory-efficient attention algorithm now used by virtually every production model — is implemented in Triton. Without Triton, implementing FlashAttention's complex tiling algorithm in raw CUDA would have been a months-long project accessible only to CUDA experts.
+          <span class="gloss" data-term="flashattention">FlashAttention</span><a class="cite" data-ref="dao2022"></a> (the memory-efficient attention algorithm now used by virtually every production model) is implemented in Triton. Without Triton, implementing FlashAttention's complex tiling algorithm in raw CUDA would have been a months-long project accessible only to CUDA experts.
         </p>
 
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>Triton is to GPU programming what high-level languages were to assembly in the 1970s. You describe <em>what</em> you want to compute; the compiler figures out <em>how</em> to lay it out on the GPU's thousands of cores. The result is within a few percent of hand-optimised CUDA speed, at a fraction of the development cost. This is why vLLM and similar engines can ship support for new architectures within days of a model release — they write Triton kernels, not CUDA.</p>
+          <p>Triton is to GPU programming what high-level languages were to assembly in the 1970s. You describe <em>what</em> you want to compute; the compiler figures out <em>how</em> to lay it out on the GPU's thousands of cores. The result is within a few percent of hand-optimised CUDA speed, at a fraction of the development cost. This is why vLLM and similar engines can ship support for new architectures within days of a model release: they write Triton kernels, not CUDA.</p>
         </div>
 
         <h2 id="choosing">Choosing the right runtime</h2>
@@ -238,9 +250,9 @@ summarise documents, translate, and more...</code></pre>
           <li>A model file (weights) is inert data. A <strong>runtime engine</strong> is the program that loads those weights and executes the maths. They are entirely separate.</li>
           <li><strong>llama.cpp</strong> brought LLMs to ordinary hardware by reimplementing the inference maths in C++ with no GPU required. It also created the GGUF format and the k-quant naming scheme.</li>
           <li><strong>GGUF</strong> bundles weights + tokenizer + config into one file, with mmap support for near-instant startup and low peak memory.</li>
-          <li><strong>Ollama</strong> wraps llama.cpp in a service manager and OpenAI-compatible REST API — zero configuration, pull-and-run workflow.</li>
+          <li><strong>Ollama</strong> wraps llama.cpp in a service manager and OpenAI-compatible REST API: zero configuration, pull-and-run workflow.</li>
           <li><strong>vLLM</strong> uses PagedAttention (inspired by OS virtual memory) to serve thousands of concurrent users on GPU clusters with far higher throughput than naive implementations.</li>
-          <li><strong>Triton</strong> is a Python-like GPU kernel language that lets engineers write high-performance GPU code without deep CUDA expertise — it's how FlashAttention was made practical.</li>
+          <li><strong>Triton</strong> is a Python-like GPU kernel language that lets engineers write high-performance GPU code without deep CUDA expertise; it's how FlashAttention was made practical.</li>
         </ul>
       </article>
 

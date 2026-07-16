@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 12 · Data for Fine-tuning — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Data for Fine-tuning — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Chat templates, schemas with pydantic, synthetic data, quality.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/12-data-for-finetuning.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Data for Fine-tuning — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Chat templates, schemas with pydantic, synthetic data, quality.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Data quality dominates fine-tuning outcomes. Instruction, chat, and preference formats; chat templates and special tokens; pydantic validation; synthetic data generation; deduplication and decontamination.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 12 · Part IV — Adapting Models</div>
           <h1>Data for Fine-tuning</h1>
-          <p class="standfirst">Training algorithms are the same for everyone. The dataset is the moat. A small, clean, well-formatted dataset consistently beats a large, noisy one — and getting the format wrong (especially the chat template) can silently waste weeks of GPU time. This plate is the practical guide to building training data that actually works.</p>
+          <p class="standfirst">Training algorithms are the same for everyone. The dataset is the moat. A small, clean, well-formatted dataset consistently beats a large, noisy one, and getting the format wrong (especially the chat template) can silently waste weeks of GPU time. This plate is the practical guide to building training data that actually works.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 18 min</span>
             <span><b>Prereqs</b> · Plates 09, 10</span>
@@ -66,7 +78,7 @@
         </div>
 
         <p><strong>Chat format (messages with roles).</strong> Multi-turn conversations represented as a list of
-          role-tagged messages. This is what most modern chat models expect — and it is the format you must use if you
+          role-tagged messages. This is what most modern chat models expect, and it is the format you must use if you
           are fine-tuning a chat/instruct variant. The roles are typically <code>system</code>, <code>user</code>, and
           <code>assistant</code>.</p>
 
@@ -104,11 +116,11 @@
         </p>
         <p>
           When a model is instruction-tuned, it learns to respond after seeing a specific sequence of special tokens
-          that delimit turns — think of them as HTTP headers for conversation. Llama-3 uses
+          that delimit turns: think of them as HTTP headers for conversation. Llama-3 uses
           <code>&lt;|start_header_id|&gt;user&lt;|end_header_id|&gt;</code>. Mistral uses
           <code>[INST]</code> / <code>[/INST]</code>. Phi-3 uses <code>&lt;|user|&gt;</code> /
           <code>&lt;|assistant|&gt;</code>. These are not interchangeable. If you format your training
-          data using Mistral's template but fine-tune Llama-3, the model sees garbled input — the
+          data using Mistral's template but fine-tune Llama-3, the model sees garbled input: the
           "headers" land in the wrong places and the model has no idea where one turn ends and the next begins.
         </p>
         <p>
@@ -223,7 +235,7 @@ print(f"{len(toks['input_ids'])} tokens")</code></pre></div>
           <div class="callout__tag">From a software-eng POV</div>
           <p>Think of training examples as typed DTOs (data transfer objects) that cross the boundary between your
           data pipeline and the training loop. Pydantic gives you the same safety guarantee as a strongly-typed API
-          contract: if the data doesn't match the schema, you find out at ingestion time — not after a 4-hour GPU run.
+          contract: if the data doesn't match the schema, you find out at ingestion time, not after a 4-hour GPU run.
           The same schemas also enforce <span class="gloss" data-term="structured-output">structured outputs</span> at
           inference time: define the response schema in pydantic, use <code>model_json_schema()</code> to generate
           a JSON schema, and pass it to the model as a grammar or tool definition.</p>
@@ -323,13 +335,13 @@ print(json.dumps(schema, indent=2))</code></pre>
         <h2 id="synthetic-data">Synthetic data and distillation</h2>
         <p>
           One of the most important shifts in fine-tuning practice since 2023: you don't have to collect all your
-          training data from humans. You can generate it from a stronger model and use it to train a weaker one —
-          this is called <span class="gloss" data-term="distillation">distillation</span><a class="cite" data-ref="bai2022"></a>.
+          training data from humans. You can generate it from a stronger model and use it to train a weaker one.
+          This is called <span class="gloss" data-term="distillation">distillation</span><a class="cite" data-ref="bai2022"></a>.
         </p>
 
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · synthetic data = a teacher writing the textbook</div>
-          <p>Traditional data collection is like assigning homework: you give students (human annotators) problems to solve and collect their answers. Synthetic data is like the teacher writing the textbook directly: GPT-4 or Claude generates the worked examples, and the student model (your smaller model) learns from them. The textbook can be high quality, large-scale, and precisely calibrated to the skills you want to teach — as long as the teacher model knows them well.</p>
+          <p>Traditional data collection is like assigning homework: you give students (human annotators) problems to solve and collect their answers. Synthetic data is like the teacher writing the textbook directly: GPT-4 or Claude generates the worked examples, and the student model (your smaller model) learns from them. The textbook can be high quality, large-scale, and precisely calibrated to the skills you want to teach, as long as the teacher model knows them well.</p>
         </div>
 
         <p>
@@ -354,7 +366,7 @@ print(json.dumps(schema, indent=2))</code></pre>
           LIMA<a class="cite" data-ref="zheng2023"></a> demonstrated that 1,000 carefully curated instruction examples
           could produce a competitive chat model, outperforming models trained on far larger but lower-quality datasets.
         </p>
-        <p><strong>Deduplication.</strong> Duplicate examples cause overfitting — the model memorizes the duplicated
+        <p><strong>Deduplication.</strong> Duplicate examples cause overfitting: the model memorizes the duplicated
           text rather than learning to generalize. Near-duplicate examples are almost as bad. Use MinHash or a simple
           hash on a normalized form of the text to detect and remove duplicates before training. A 10% dedup pass on
           a 100k-example dataset is cheap and consistently improves results.</p>
@@ -363,7 +375,7 @@ print(json.dumps(schema, indent=2))</code></pre>
           of a collapsed or incomplete generation), and use a fast classifier to flag examples that are off-topic or
           contain known-bad patterns (repetition, profanity where unwanted, formatting artifacts from web scraping).</p>
         <p><strong>Decontamination.</strong> This one is easy to miss: if your fine-tuning data contains examples from
-          your evaluation benchmarks (MMLU, HumanEval, etc.), your benchmark scores will be artificially inflated — the
+          your evaluation benchmarks (MMLU, HumanEval, etc.), your benchmark scores will be artificially inflated: the
           model has seen the test. This is called data contamination, and it is widespread in published results<a class="cite" data-ref="zheng2023"></a>. Before training, compute n-gram overlap between your training set and your
           eval sets and remove matches. The threshold is usually: if any 10-gram in the eval example appears in a training
           example, remove the training example.</p>
@@ -429,14 +441,14 @@ print(json.dumps(schema, indent=2))</code></pre>
         <ul>
           <li>Three data formats: <strong>instruction</strong> (flat string, single-turn), <strong>chat</strong> (messages list with roles, multi-turn), <strong>preference</strong> (chosen/rejected pairs for DPO). Match the format to your training objective.</li>
           <li>The <strong><span class="gloss" data-term="chat-template">chat template</span></strong> is not optional. Use <code>tokenizer.apply_chat_template()</code> always. Always print a decoded example to verify before training. Wrong template → silent failure.</li>
-          <li><strong>Pydantic schemas</strong> at ingestion time catch malformed examples before they corrupt training. Treat training data like typed API contracts — validate at the boundary, fail loudly.</li>
+          <li><strong>Pydantic schemas</strong> at ingestion time catch malformed examples before they corrupt training. Treat training data like typed API contracts: validate at the boundary, fail loudly.</li>
           <li><strong>Synthetic data / <span class="gloss" data-term="distillation">distillation</span></strong> from a stronger model can bootstrap a high-quality dataset at low cost. Watch for provider TOS, diversity gaps, and teacher errors.</li>
           <li><strong>Dedup, quality filter, decontaminate</strong> (remove eval-set overlap) before training. These steps are cheap relative to the compute saved by not training on garbage.</li>
-          <li><strong>Small and clean beats large and noisy.</strong> Start with fewer examples than you think you need, evaluate, then scale. The most common failure mode is overfitting on a small, noisy dataset — not having too little data.</li>
+          <li><strong>Small and clean beats large and noisy.</strong> Start with fewer examples than you think you need, evaluate, then scale. The most common failure mode is overfitting on a small, noisy dataset, not having too little data.</li>
         </ul>
         <p>
           With data pipelines covered, the next plate moves from preparing models to deploying them:
-          <a href="13-quantization.html">Plate&nbsp;13</a> on quantization — how to shrink a model's memory footprint
+          <a href="13-quantization.html">Plate&nbsp;13</a> on quantization: how to shrink a model's memory footprint
           by 4–8× without meaningfully degrading quality, making it practical to serve large models on commodity hardware.
         </p>
       </article>

@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Brainstorming · The Mathematical Soul — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The Mathematical Soul — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Vectors, matrices, and attention: how words become coordinates and talk to each other.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/brainstorming-math.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Mathematical Soul — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Vectors, matrices, and attention: how words become coordinates and talk to each other.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Vectors, matrix multiplication, dot products, softmax, and the full attention mechanism explained from scratch with real-world analogies and worked examples.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -102,10 +114,10 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 20 · Part VII — Brainstorming</div>
           <h1>The Mathematical Soul</h1>
-          <p class="standfirst">LLMs are described as black boxes, but the machinery inside is just high-school arithmetic scaled to an astronomical degree — and it is completely learnable. This plate builds from zero: what a vector is, how matrix multiplication works (with actual numbers you can verify), and exactly how the attention mechanism resolves the meaning of a word from its neighbours. No hand-waving.</p>
+          <p class="standfirst">LLMs are described as black boxes, but the machinery inside is just high-school arithmetic scaled to an astronomical degree, and it is completely learnable. This plate builds from zero: what a vector is, how matrix multiplication works (with actual numbers you can verify), and exactly how the attention mechanism resolves the meaning of a word from its neighbours. No hand-waving.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 35 min</span>
-            <span><b>Prereqs</b> · None — truly from scratch</span>
+            <span><b>Prereqs</b> · None: truly from scratch</span>
             <span><b>Level</b> · Conceptual deep-dive</span>
           </div>
         </div>
@@ -119,8 +131,8 @@
           Here is the complete story in five sentences, which we will then unpack in exhaustive detail:
         </p>
         <ol>
-          <li>Every word (or word-piece) gets converted to a <strong>vector</strong> — a list of numbers that encodes its rough meaning.</li>
-          <li>That vector gets <strong>transformed by matrices</strong> — grids of numbers that act like lenses, shifting the vector's position in meaning-space.</li>
+          <li>Every word (or word-piece) gets converted to a <strong>vector</strong>: a list of numbers that encodes its rough meaning.</li>
+          <li>That vector gets <strong>transformed by matrices</strong>: grids of numbers that act like lenses, shifting the vector's position in meaning-space.</li>
           <li>The <strong>attention mechanism</strong> lets every word's vector look at every other word's vector and borrow the parts that are relevant, resolving ambiguity from context.</li>
           <li>Dozens of those transforms + attention layers are stacked on top of each other, each one refining the representation further.</li>
           <li>The final vector is projected back to a probability distribution over all possible next words. The highest-probability word is printed.</li>
@@ -130,15 +142,15 @@
         </p>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
-        <h2 id="vectors">Part 1 — Vectors: words as coordinates</h2>
+        <h2 id="vectors">Part 1. Vectors: words as coordinates</h2>
 
         <h3>What is a vector?</h3>
         <p>
-          A <strong>vector</strong> is simply an ordered list of numbers. That's the whole definition. A vector with two numbers describes a point on a flat plane. A vector with three numbers describes a point in 3D space. A vector with 4,096 numbers describes a point in a 4,096-dimensional space — which you can't visualise, but the math works exactly the same way.
+          A <strong>vector</strong> is simply an ordered list of numbers. That's the whole definition. A vector with two numbers describes a point on a flat plane. A vector with three numbers describes a point in 3D space. A vector with 4,096 numbers describes a point in a 4,096-dimensional space, which you can't visualise, but the math works exactly the same way.
         </p>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · a customer profile in a spreadsheet</div>
-          <p>Imagine you're a marketing analyst and you represent each customer with five measurements: <em>age, monthly spend, years as customer, support calls logged, satisfaction score</em>. Each customer is a row of five numbers — a 5-dimensional vector. You can measure how "similar" two customers are by seeing how close their rows are to each other. That's exactly what an embedding vector does for a word: it's a row of numbers that places the word in a space where similar words land nearby.</p>
+          <p>Imagine you're a marketing analyst and you represent each customer with five measurements: <em>age, monthly spend, years as customer, support calls logged, satisfaction score</em>. Each customer is a row of five numbers, a 5-dimensional vector. You can measure how "similar" two customers are by seeing how close their rows are to each other. That's exactly what an embedding vector does for a word: it's a row of numbers that places the word in a space where similar words land nearby.</p>
         </div>
 
         <h3>A 2D toy example: words on a map</h3>
@@ -196,7 +208,7 @@
 
         <div class="callout callout--win">
           <div class="callout__tag">The famous King − Man + Woman = Queen example</div>
-          <p>Because meaning is encoded as position in a geometric space, you can do <em>arithmetic on meaning</em>. If you take the vector for <strong>King</strong>, subtract the vector for <strong>Man</strong>, and add the vector for <strong>Woman</strong>, the result lands very close to the vector for <strong>Queen</strong>. The geometry captures the relationship "royalty minus male plus female." This works because the direction from Man→Woman is roughly the same vector as the direction from King→Queen — two parallel edges of the same semantic rectangle.</p>
+          <p>Because meaning is encoded as position in a geometric space, you can do <em>arithmetic on meaning</em>. If you take the vector for <strong>King</strong>, subtract the vector for <strong>Man</strong>, and add the vector for <strong>Woman</strong>, the result lands very close to the vector for <strong>Queen</strong>. The geometry captures the relationship "royalty minus male plus female." This works because the direction from Man→Woman is roughly the same vector as the direction from King→Queen: two parallel edges of the same semantic rectangle.</p>
         </div>
 
         <h3>Scaling up to 4,096 dimensions</h3>
@@ -208,11 +220,11 @@
         </p>
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>Think of an embedding vector as a <strong>feature vector</strong> in the sense of a feature store — a dense encoding of everything the system knows about an entity. The difference from hand-crafted features is that <em>the model learned which dimensions to use</em>. You never told it dimension 1,347 means "formal register" — it figured that out by being trained to predict text.</p>
+          <p>Think of an embedding vector as a <strong>feature vector</strong> in the sense of a feature store: a dense encoding of everything the system knows about an entity. The difference from hand-crafted features is that <em>the model learned which dimensions to use</em>. You never told it dimension 1,347 means "formal register"; it figured that out by being trained to predict text.</p>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
-        <h2 id="dot-product">Part 2 — The dot product: measuring similarity</h2>
+        <h2 id="dot-product">Part 2. The dot product: measuring similarity</h2>
         <p>
           Before we tackle matrices, we need one prerequisite operation: the <strong>dot product</strong>. It measures how "aligned" two vectors are, and it's the most-used single operation in all of deep learning.
         </p>
@@ -232,19 +244,19 @@
         </div>
 
         <p>
-          What does the number 13 mean? It measures <strong>alignment</strong>. A higher dot product means the two vectors "point in the same direction" in meaning-space — they are more similar. A dot product near zero means they are perpendicular (unrelated). A negative dot product means they point away from each other (opposed in meaning).
+          What does the number 13 mean? It measures <strong>alignment</strong>. A higher dot product means the two vectors "point in the same direction" in meaning-space; they are more similar. A dot product near zero means they are perpendicular (unrelated). A negative dot product means they point away from each other (opposed in meaning).
         </p>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · rating movies</div>
-          <p>Imagine you and a friend each rate five movies on a 0–5 scale. Your ratings are vector a; your friend's are vector b. The dot product a·b is high if you both gave high ratings to the same movies — meaning you have similar taste. A movie recommendation engine does exactly this: it computes the dot product between your taste vector and every other user's taste vector, then recommends movies that users with high dot products to you enjoyed.</p>
+          <p>Imagine you and a friend each rate five movies on a 0–5 scale. Your ratings are vector a; your friend's are vector b. The dot product a·b is high if you both gave high ratings to the same movies, meaning you have similar taste. A movie recommendation engine does exactly this: it computes the dot product between your taste vector and every other user's taste vector, then recommends movies that users with high dot products to you enjoyed.</p>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
-        <h2 id="matrices">Part 3 — Matrices: the transformation engine</h2>
+        <h2 id="matrices">Part 3. Matrices: the transformation engine</h2>
 
         <h3>What is a matrix?</h3>
         <p>
-          A <strong>matrix</strong> is a rectangular grid of numbers. That's it. A 3×2 matrix has 3 rows and 2 columns. A 4,096×4,096 matrix has 4,096 rows and 4,096 columns. When you "multiply a vector by a matrix," you are running the vector through a set of filters — one per row — and producing a new vector.
+          A <strong>matrix</strong> is a rectangular grid of numbers. That's it. A 3×2 matrix has 3 rows and 2 columns. A 4,096×4,096 matrix has 4,096 rows and 4,096 columns. When you "multiply a vector by a matrix," you are running the vector through a set of filters (one per row) and producing a new vector.
         </p>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · a grading rubric</div>
@@ -287,14 +299,14 @@
         </p>
 
         <div class="step-box">
-          <div class="step-hd">Step 1 — compute pounds (row 1 · input)</div>
+          <div class="step-hd">Step 1: compute pounds (row 1 · input)</div>
           <div class="step-eq">
             Row 1 = [<span class="hl-r">0.79, 0.86</span>]&nbsp;&nbsp;Input = [<span class="hl-c">100, 50</span>]
             <br>pounds = (<span class="hl-r">0.79</span> × <span class="hl-c">100</span>) + (<span class="hl-r">0.86</span> × <span class="hl-c">50</span>) = 79 + 43 = <span class="hl-ans">122</span>
           </div>
         </div>
         <div class="step-box">
-          <div class="step-hd">Step 2 — compute yen (row 2 · input)</div>
+          <div class="step-hd">Step 2: compute yen (row 2 · input)</div>
           <div class="step-eq">
             Row 2 = [<span class="hl-r">130, 141</span>]&nbsp;&nbsp;Input = [<span class="hl-c">100, 50</span>]
             <br>yen = (<span class="hl-r">130</span> × <span class="hl-c">100</span>) + (<span class="hl-r">141</span> × <span class="hl-c">50</span>) = 13,000 + 7,050 = <span class="hl-ans">20,050</span>
@@ -347,7 +359,7 @@
         </div>
 
         <p>
-          In LLMs: the input is a 4,096-dimensional vector (4096×1). A weight matrix might be 4096×4096 — it produces another 4,096-dimensional vector. Or 4096×16384 — it expands the vector into a 16,384-dimensional space (this is the FFN's first layer). The math is always the same; only the numbers get bigger.
+          In LLMs: the input is a 4,096-dimensional vector (4096×1). A weight matrix might be 4096×4096; it produces another 4,096-dimensional vector. Or 4096×16384: it expands the vector into a 16,384-dimensional space (this is the FFN's first layer). The math is always the same; only the numbers get bigger.
         </p>
 
         <h3>A 3×3 example: recipe nutrition analysis</h3>
@@ -390,7 +402,7 @@
         </div>
 
         <p>
-          Notice: one multiplication applied <em>three separate "questions"</em> to the same input simultaneously. That is exactly the role of weight matrices in a neural network — they apply many learned transformations in parallel.
+          Notice: one multiplication applied <em>three separate "questions"</em> to the same input simultaneously. That is exactly the role of weight matrices in a neural network. They apply many learned transformations in parallel.
         </p>
 
         <h3>Matrix × matrix (batching vectors)</h3>
@@ -404,7 +416,7 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
-        <h2 id="softmax">Part 4 — Softmax: scores to probabilities</h2>
+        <h2 id="softmax">Part 4. Softmax: scores to probabilities</h2>
         <p>
           The model needs to convert a set of raw scores (which can be any real number, positive or negative) into <em>probabilities</em> that sum to 1. The function that does this is called <strong>softmax</strong>.
         </p>
@@ -416,15 +428,15 @@
         </p>
 
         <div class="step-box">
-          <div class="step-hd">Softmax worked example — three candidate next words</div>
+          <div class="step-hd">Softmax worked example: three candidate next words</div>
           <div class="step-eq">
             Raw scores: "dog" = <span class="hl-r">3.2</span>,  "cat" = <span class="hl-r">2.1</span>,  "car" = <span class="hl-r">0.4</span>
             <br><br>
-            Step 1 — exponentiate:
+            Step 1, exponentiate:
             <br>&nbsp; e^3.2 ≈ 24.5&nbsp;&nbsp;e^2.1 ≈ 8.2&nbsp;&nbsp;e^0.4 ≈ 1.5
             <br>&nbsp; sum = 24.5 + 8.2 + 1.5 = 34.2
             <br><br>
-            Step 2 — normalise:
+            Step 2, normalise:
             <br>&nbsp; P("dog") = 24.5 / 34.2 ≈ <span class="hl-ans">0.716 (71.6%)</span>
             <br>&nbsp; P("cat") = 8.2  / 34.2 ≈ <span class="hl-ans">0.240 (24.0%)</span>
             <br>&nbsp; P("car") = 1.5  / 34.2 ≈ <span class="hl-ans">0.044 (4.4%)</span>
@@ -438,15 +450,15 @@
         </div>
 
         <p>
-          Crucially, softmax <em>amplifies differences</em>. A small raw score gap (3.2 vs 2.1 = only 1.1 apart) becomes a large probability gap (71% vs 24%). This makes the model's choices decisively favour whichever candidate has the highest score rather than wavering evenly between them. The <code>temperature</code> parameter you see in inference settings works by dividing raw scores before softmax — lower temperature amplifies differences further; higher temperature flattens them (more randomness).
+          Crucially, softmax <em>amplifies differences</em>. A small raw score gap (3.2 vs 2.1 = only 1.1 apart) becomes a large probability gap (71% vs 24%). This makes the model's choices decisively favour whichever candidate has the highest score rather than wavering evenly between them. The <code>temperature</code> parameter you see in inference settings works by dividing raw scores before softmax: lower temperature amplifies differences further; higher temperature flattens them (more randomness).
         </p>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
-        <h2 id="attention">Part 5 — Attention: words listening to each other</h2>
+        <h2 id="attention">Part 5. Attention: words listening to each other</h2>
 
         <h3>Why a single vector per word isn't enough</h3>
         <p>
-          Here is the core problem with simple word vectors: the word "bank" has one vector. But in "I sat on the river bank" it means something completely different from "I deposited money at the bank." A static dictionary of word→vector can't capture this — you'd need the vector to change depending on neighbours.
+          Here is the core problem with simple word vectors: the word "bank" has one vector. But in "I sat on the river bank" it means something completely different from "I deposited money at the bank." A static dictionary of word→vector can't capture this; you'd need the vector to change depending on neighbours.
         </p>
         <p>
           This is precisely what the <strong>attention mechanism</strong> solves. It lets each token's vector update itself by pulling information from surrounding tokens. After attention, the vector for "bank" near "river" has shifted toward the river-meaning region; "bank" near "deposit" has shifted toward the finance-meaning region. Same starting point, different ending points.
@@ -455,8 +467,8 @@
         <h3>The library card analogy</h3>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · a library with index cards</div>
-          <p>Imagine a huge library. Every book has two things: a <strong>label on its spine</strong> (its Key — a short summary of what the book contains) and the <strong>actual book content</strong> (its Value — the detailed information inside).</p>
-          <p>You walk in with a <strong>search query</strong> (your Query — what you're looking for). You scan the spines. You compute a match score between your query and each book's spine label. Then you pull the most relevant books and read them. The "information" you take away is a blend of all the books you pulled, weighted by how closely their spines matched your query.</p>
+          <p>Imagine a huge library. Every book has two things: a <strong>label on its spine</strong> (its Key: a short summary of what the book contains) and the <strong>actual book content</strong> (its Value: the detailed information inside).</p>
+          <p>You walk in with a <strong>search query</strong> (your Query: what you're looking for). You scan the spines. You compute a match score between your query and each book's spine label. Then you pull the most relevant books and read them. The "information" you take away is a blend of all the books you pulled, weighted by how closely their spines matched your query.</p>
           <p>That's attention. Each token is simultaneously: (1) a searcher with a Query asking what context it needs; (2) a book with a Key label advertising what it can offer; (3) a book with a Value containing the actual information to blend in.</p>
         </div>
 
@@ -493,10 +505,10 @@
         </div>
 
         <p>
-          W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> are the learned weight matrices. They are learned during training — nobody hand-crafted them. After training on billions of tokens, they encode what makes a useful Query, Key, and Value in human language.
+          W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> are the learned weight matrices. They are learned during training; nobody hand-crafted them. After training on billions of tokens, they encode what makes a useful Query, Key, and Value in human language.
         </p>
         <p>
-          In a typical model (e.g., 4,096-dim embeddings, 64-dim head size), these matrices are 4,096×64, projecting the big embedding down to a smaller space for efficient computation. This is where GQA and MQA (from Plate 15) come in — but for now, assume each token gets its own Q, K, and V.
+          In a typical model (e.g., 4,096-dim embeddings, 64-dim head size), these matrices are 4,096×64, projecting the big embedding down to a smaller space for efficient computation. This is where GQA and MQA (from Plate 15) come in, but for now, assume each token gets its own Q, K, and V.
         </p>
 
         <h3>Step 2: Compute raw attention scores</h3>
@@ -510,7 +522,7 @@
         </div>
 
         <p>
-          A high score means token <em>i</em>'s Query aligns well with token <em>j</em>'s Key — token <em>i</em> will borrow heavily from <em>j</em>'s Value.
+          A high score means token <em>i</em>'s Query aligns well with token <em>j</em>'s Key; token <em>i</em> will borrow heavily from <em>j</em>'s Value.
         </p>
 
         <h3>Step 2 worked: "The cat sat on the mat"</h3>
@@ -550,7 +562,7 @@
         </div>
 
         <p>
-          "cat" attends most strongly to itself (0.84) and to "mat" (0.51). That makes semantic sense — the subject (cat) is semantically related to the object (mat) in this sentence.
+          "cat" attends most strongly to itself (0.84) and to "mat" (0.51). That makes semantic sense: the subject (cat) is semantically related to the object (mat) in this sentence.
         </p>
 
         <h3>Step 3: Scale by √d_k</h3>
@@ -593,7 +605,7 @@
         </div>
 
         <p>
-          "cat" pays most attention to itself (23%) and "mat" (19%), with attention spread more evenly over the function words. This is the attention distribution for a single head in a toy example — in a real model with real data, the weights would be far more concentrated.
+          "cat" pays most attention to itself (23%) and "mat" (19%), with attention spread more evenly over the function words. This is the attention distribution for a single head in a toy example; in a real model with real data, the weights would be far more concentrated.
         </p>
         <p>
           Visualised as a heatmap (rows = which token is querying, columns = which token is being attended to):
@@ -659,12 +671,12 @@
         </div>
 
         <p>
-          In matrix form: Q, K, V are matrices where each row is the Q/K/V vector for one token. <code>Q K<sup>T</sup></code> computes all pairwise dot products in one matrix multiplication — this is an n×n matrix (where n is sequence length). Each row of that matrix, after scaling and softmax, is the attention distribution for one token. Multiplying by V blends the values according to those weights.
+          In matrix form: Q, K, V are matrices where each row is the Q/K/V vector for one token. <code>Q K<sup>T</sup></code> computes all pairwise dot products in one matrix multiplication; this is an n×n matrix (where n is sequence length). Each row of that matrix, after scaling and softmax, is the attention distribution for one token. Multiplying by V blends the values according to those weights.
         </p>
 
         <h3>Multi-head attention: multiple perspectives at once</h3>
         <p>
-          A single attention head can only learn one "type" of relationship at a time — maybe it specialises in tracking subjects, or in resolving pronouns, or in syntactic dependencies. <strong>Multi-head attention</strong> runs <em>h</em> attention heads in parallel (each with its own W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> matrices), then concatenates their outputs and projects back to the full embedding dimension.
+          A single attention head can only learn one "type" of relationship at a time: maybe it specialises in tracking subjects, or in resolving pronouns, or in syntactic dependencies. <strong>Multi-head attention</strong> runs <em>h</em> attention heads in parallel (each with its own W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> matrices), then concatenates their outputs and projects back to the full embedding dimension.
         </p>
 
         <figure class="diagram">
@@ -721,9 +733,9 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
-        <h2 id="full-pass">Part 6 — The full forward pass, end to end</h2>
+        <h2 id="full-pass">Part 6. The full forward pass, end to end</h2>
 
-        <p>Let's trace a single token — the word <strong>"river"</strong> in the sentence "She sat by the <strong>river</strong> bank." — through an entire Transformer block.</p>
+        <p>Let's trace a single token (the word <strong>"river"</strong> in the sentence "She sat by the <strong>river</strong> bank.") through an entire Transformer block.</p>
 
         <div class="pipeline">
           <div class="pipeline__step">
@@ -779,7 +791,7 @@
 
         <h3>What the layers actually learn</h3>
         <p>
-          Early layers tend to capture surface-level syntax: word boundaries, POS tags, nearby word relationships. Middle layers capture semantics: word sense, named entities, coreference. Later layers capture task-specific reasoning: what the right next word should be given everything the model knows. This isn't hand-designed — it emerges from training.
+          Early layers tend to capture surface-level syntax: word boundaries, POS tags, nearby word relationships. Middle layers capture semantics: word sense, named entities, coreference. Later layers capture task-specific reasoning: what the right next word should be given everything the model knows. This isn't hand-designed; it emerges from training.
         </p>
         <p>
           Researchers have found (by probing individual layer activations) that in a 32-layer model, layer 5 might encode grammatical gender, layer 15 might encode named-entity type, and layer 28 might encode factual knowledge. The representations become progressively more abstract and task-oriented as they flow through the stack.
@@ -798,24 +810,24 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
-        <h2 id="parameters">Part 7 — Where do the matrices come from?</h2>
+        <h2 id="parameters">Part 7. Where do the matrices come from?</h2>
         <p>
           Every number in every W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>, W<sub>O</sub>, and FFN matrix is a <strong>learned parameter</strong>. A "7B parameter model" literally has 7 billion of these numbers. Before training, they're initialised randomly (small random values near zero). During training, the model sees billions of text examples and uses backpropagation + gradient descent to nudge each parameter slightly, in the direction that reduces its prediction error.
         </p>
         <p>
-          Over trillions of training steps, the matrices sculpt themselves into configurations that produce excellent next-token predictions. The representations, the attention patterns, the factual knowledge — it all emerges from this one repeated operation: <em>predict the next token, measure how wrong you were, nudge all 7B parameters a tiny amount in the direction of being less wrong.</em>
+          Over trillions of training steps, the matrices sculpt themselves into configurations that produce excellent next-token predictions. The representations, the attention patterns, the factual knowledge, it all emerges from this one repeated operation: <em>predict the next token, measure how wrong you were, nudge all 7B parameters a tiny amount in the direction of being less wrong.</em>
         </p>
         <div class="callout callout--win">
           <div class="callout__tag">The fundamental insight</div>
-          <p>There is no "understanding" module. There is no "knowledge graph" wired in by hand. Everything the model knows — syntax, semantics, facts, reasoning patterns, code, maths — is encoded in 7 billion floats, distributed across hundreds of weight matrices, learned entirely from predicting which word comes next in human text. The sophistication of the result given the simplicity of the objective is the genuinely remarkable thing.</p>
+          <p>There is no "understanding" module. There is no "knowledge graph" wired in by hand. Everything the model knows (syntax, semantics, facts, reasoning patterns, code, maths) is encoded in 7 billion floats, distributed across hundreds of weight matrices, learned entirely from predicting which word comes next in human text. The sophistication of the result given the simplicity of the objective is the genuinely remarkable thing.</p>
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════ -->
         <h2 id="recap">Recap</h2>
         <ul>
-          <li><strong>Vectors</strong> are lists of numbers. Words become vectors via an embedding table — similar words land near each other in the resulting space. Real models use 4,096+ dimensional vectors.</li>
+          <li><strong>Vectors</strong> are lists of numbers. Words become vectors via an embedding table; similar words land near each other in the resulting space. Real models use 4,096+ dimensional vectors.</li>
           <li>The <strong>dot product</strong> (multiply pairs, sum them up) measures how aligned two vectors are. It's the building block of both matrix multiplication and attention.</li>
-          <li><strong>Matrix multiplication</strong> applies many dot products simultaneously — each row of the matrix is one "filter" applied to the input vector. An m×n matrix transforms an n-dim vector into an m-dim vector. Nothing more.</li>
+          <li><strong>Matrix multiplication</strong> applies many dot products simultaneously: each row of the matrix is one "filter" applied to the input vector. An m×n matrix transforms an n-dim vector into an m-dim vector. Nothing more.</li>
           <li><strong>Softmax</strong> converts raw scores into probabilities (positive, sum to 1). Temperature controls how peaked the distribution is.</li>
           <li><strong>Attention</strong> gives each token three roles: Query (what am I looking for?), Key (what do I offer?), Value (what payload do I share?). Raw scores = Q·K<sup>T</sup>, scaled by √d<sub>k</sub>, then softmax'd into weights, then used to blend the Values. The result is a context-aware representation of each token.</li>
           <li><strong>Multi-head attention</strong> runs h parallel attention heads, each learning a different relationship type, then concatenates and projects their outputs.</li>

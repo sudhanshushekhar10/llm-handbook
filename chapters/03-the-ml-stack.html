@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 03 · The ML Stack, Demystified — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The ML Stack, Demystified — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Python, PyTorch, CUDA, GPUs, Hugging Face, pydantic — the alien map.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/03-the-ml-stack.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The ML Stack, Demystified — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Python, PyTorch, CUDA, GPUs, Hugging Face, pydantic — the alien map.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="PyTorch, CUDA, Hugging Face, pydantic — every scary ML term mapped to a familiar software-engineering role, so you can set up and reason about the stack without confusion.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 03 · Part I — Foundations</div>
           <h1>The ML Stack, Demystified</h1>
-          <p class="standfirst">PyTorch, CUDA, Hugging Face, pydantic — these terms form the alien map of the ML world. Each one maps exactly to a role you already know. This plate is your Rosetta Stone.</p>
+          <p class="standfirst">PyTorch, CUDA, Hugging Face, pydantic: these terms form the alien map of the ML world. Each one maps exactly to a role you already know. This plate is your Rosetta Stone.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 16 min</span>
             <span><b>Prereqs</b> · Plates 01, 02</span>
@@ -52,18 +64,18 @@
         <h2 id="why-python">Why Python won</h2>
         <p>
           If you're a backend engineer who grew up on Java, Go, or Rust, the ML ecosystem's commitment to Python might
-          look like an accident of history. It isn't — or rather, it <em>is</em> an accident, but one that created an
+          look like an accident of history. It isn't, or rather, it <em>is</em> an accident, but one that created an
           unassailable moat.
         </p>
         <p>
           The real computation in deep learning doesn't happen in Python. It happens in highly optimized C++/CUDA kernels
-          inside libraries like PyTorch and cuDNN. Python is the <em>glue layer</em> — the scripting interface that
+          inside libraries like PyTorch and cuDNN. Python is the <em>glue layer</em>: the scripting interface that
           assembles these kernels, loops over batches, and handles data loading. Because Python is just scripting the
           heavy work, its interpreter overhead is nearly irrelevant: a forward pass on a 7B model is 99.9% GPU kernel
           time and ~0.1% Python overhead.
         </p>
         <p>
-          This architecture — a thin Python API over a fast native core — turns out to be ideal for research: you can
+          This architecture (a thin Python API over a fast native core) turns out to be ideal for research: you can
           change model architectures interactively in a Jupyter notebook, see results in seconds, and deploy the same
           code to production without a rewrite. NumPy established the convention; PyTorch followed it. The ML community
           built its tooling on top, and the gravity well became self-reinforcing. Python is the interface; the metal
@@ -73,7 +85,7 @@
         <h2 id="pytorch">PyTorch: NumPy with a GPU and autograd</h2>
         <p>
           <span class="gloss" data-term="pytorch">PyTorch</span> is the dominant deep learning framework today. If you
-          know NumPy — arrays, slicing, broadcasting — you already know 80% of the API. The key difference is that
+          know NumPy (arrays, slicing, broadcasting), you already know 80% of the API. The key difference is that
           PyTorch operates on <span class="gloss" data-term="tensor">tensors</span>: multi-dimensional arrays that can
           live on a GPU and carry a computation graph.
         </p>
@@ -81,7 +93,7 @@
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · NumPy + two superpowers</div>
           <p>Imagine NumPy arrays with two additions: (1) they can be moved to a GPU with <code>.to("cuda")</code> and
-          all operations run there automatically — 100× faster for large parallel math; (2) every operation is
+          all operations run there automatically: 100× faster for large parallel math; (2) every operation is
           automatically recorded in a <em>computation graph</em>. Call <code>.backward()</code> on any scalar and
           PyTorch walks that graph in reverse, computing the gradient of every contributing operation via the
           chain rule (<span class="gloss" data-term="backprop">backpropagation</span>). That's the whole secret of training:
@@ -90,7 +102,7 @@
 
         <p>
           TensorFlow (Google) predates PyTorch and was dominant until roughly 2020. It used a "define then run" static
-          graph, which was faster in production but painful for debugging — you couldn't just <code>print()</code>
+          graph, which was faster in production but painful for debugging; you couldn't just <code>print()</code>
           intermediate values. PyTorch's "define by run" eager execution won the research community, and when
           <code>torch.compile</code> arrived in PyTorch 2.0, it closed most of the production performance gap.
           TensorFlow still runs production workloads at Google; JAX (also from Google) is the frontier-research
@@ -101,14 +113,14 @@
         <p>
           A <span class="gloss" data-term="cuda">CUDA</span>-capable NVIDIA GPU is the industry-standard compute unit for
           both training and <span class="gloss" data-term="inference">inference</span>. The key resource is
-          <strong>VRAM</strong> (Video RAM) — the GPU's on-chip memory. Everything the model operates on — the weight
-          matrices, the activations, the key-value cache — must fit in VRAM during a forward pass. If it doesn't fit,
+          <strong>VRAM</strong> (Video RAM): the GPU's on-chip memory. Everything the model operates on (the weight
+          matrices, the activations, the key-value cache) must fit in VRAM during a forward pass. If it doesn't fit,
           the job crashes with an <code>OutOfMemoryError</code>.
         </p>
         <p>
           The rule of thumb: a model requires roughly <strong>2 bytes per parameter</strong> in 16-bit (fp16) precision.
           A 7B model needs ~14 GB of VRAM just for weights; during training you add activations, optimizer state, and
-          gradients — often 4–6× more. For inference only, 14 GB fits on a single consumer GPU (e.g. RTX 3090/4090).
+          gradients, often 4–6× more. For inference only, 14 GB fits on a single consumer GPU (e.g. RTX 3090/4090).
           <span class="gloss" data-term="quantization">Quantization</span> (Plate 13) can shrink this further: in 4-bit,
           a 7B model fits in ~4 GB.
         </p>
@@ -125,9 +137,9 @@
 
         <p>
           Apple Silicon (M1 through M4 series) uses a unified memory architecture: the CPU and GPU share the same RAM pool.
-          PyTorch accesses the GPU via <strong>MPS</strong> (Metal Performance Shaders — Apple's GPU compute API,
+          PyTorch accesses the GPU via <strong>MPS</strong> (Metal Performance Shaders: Apple's GPU compute API,
           analogous to CUDA). On an M-series MacBook with 32 GB of unified memory you can run 13B-parameter models
-          at reasonable inference speed — a remarkable dev environment that needs no external GPU. Use
+          at reasonable inference speed, a remarkable dev environment that needs no external GPU. Use
           <code>device = "mps"</code> everywhere you'd otherwise use <code>"cuda"</code>.
         </p>
         <p>
@@ -146,8 +158,8 @@
           <div class="callout__tag">From a software-eng POV</div>
           <p><strong>The Hub</strong> (<a href="https://huggingface.co/models">huggingface.co/models</a>) is
           GitHub + Docker Hub for model weights. A model card is the README; the repository holds the weight files,
-          tokenizer config, and <code>config.json</code>. You pull a model with <code>from_pretrained("org/model-name")</code>
-          — it downloads to <code>~/.cache/huggingface/hub</code> and is cached locally thereafter. Version tags,
+          tokenizer config, and <code>config.json</code>. You pull a model with <code>from_pretrained("org/model-name")</code>.
+          It downloads to <code>~/.cache/huggingface/hub</code> and is cached locally thereafter. Version tags,
           branches, and commit hashes work just as in git. Treat a model identifier like an immutable Docker image tag:
           <code>meta-llama/Llama-3.1-8B-Instruct</code> is a specific artifact, not a floating pointer.</p>
         </div>
@@ -163,7 +175,7 @@
               <tr>
                 <td><code><span class="gloss" data-term="transformers-lib">transformers</span></code></td>
                 <td>Load and run pretrained models; tokenizers; pipelines for common tasks</td>
-                <td>The standard SDK — the <code>boto3</code> of LLMs</td>
+                <td>The standard SDK: the <code>boto3</code> of LLMs</td>
               </tr>
               <tr>
                 <td><code>datasets</code></td>
@@ -178,12 +190,12 @@
               <tr>
                 <td><code>accelerate</code></td>
                 <td>Abstract over single-GPU / multi-GPU / multi-node training without changing model code</td>
-                <td>A distributed-systems abstraction layer — like writing code once for both single-thread and thread-pool</td>
+                <td>A distributed-systems abstraction layer, like writing code once for both single-thread and thread-pool</td>
               </tr>
               <tr>
                 <td><code>tokenizers</code></td>
                 <td>Fast Rust-backed tokenizer implementation; used internally by <code>transformers</code></td>
-                <td>A compiled parser — the C extension under the hood of the Python tokenizer API</td>
+                <td>A compiled parser (the C extension under the hood of the Python tokenizer API)</td>
               </tr>
               <tr>
                 <td><code>trl</code></td>
@@ -200,7 +212,7 @@
           ready to fine-tune. The rest are there when you need them.
         </p>
         <p>
-          There is also the <span class="gloss" data-term="gguf">GGUF</span> format and <code>llama.cpp</code> — a highly
+          There is also the <span class="gloss" data-term="gguf">GGUF</span> format and <code>llama.cpp</code>, a highly
           optimized C++ inference engine that runs <span class="gloss" data-term="quantization">quantized</span> models
           on CPU (and MPS/Metal) without PyTorch at all. Wrapped by <span class="gloss" data-term="ollama">Ollama</span>,
           this is how many developers run models locally without thinking about Python environments. We'll return to it
@@ -210,7 +222,7 @@
         <h2 id="pydantic">pydantic and the app-layer glue</h2>
         <p>
           <span class="gloss" data-term="pydantic">pydantic</span> shows up constantly in LLM application code and trips
-          up engineers who expect it to be an ML library. It isn't. Pydantic is a Python data validation library — you
+          up engineers who expect it to be an ML library. It isn't. Pydantic is a Python data validation library: you
           define a schema using Python type annotations, and pydantic validates, coerces, and serializes JSON payloads
           against it. Think of it as the Protobuf/JSON Schema of the Python world, but with runtime validation built in.
         </p>
@@ -268,7 +280,7 @@ print(json.dumps(SentimentResult.model_json_schema(), indent=2))</code></pre></d
         </div>
 
         <p>
-          Pydantic is not doing anything ML-specific. It is runtime type-checking for Python — the kind of thing
+          Pydantic is not doing anything ML-specific. It is runtime type-checking for Python, the kind of thing
           you'd normally get from a compiled language's type system. In an LLM application, it's the contract layer
           between the "write some JSON" instruction you send the model and the typed Python object your downstream
           code expects.
@@ -288,8 +300,8 @@ print(json.dumps(SentimentResult.model_json_schema(), indent=2))</code></pre></d
           <li>Create an isolated environment: <code>python -m venv .venv &amp;&amp; source .venv/bin/activate</code>
             (or <code>conda create -n llms python=3.11</code>). Never install ML libraries into your system Python.</li>
           <li>Check your CUDA version: <code>nvidia-smi</code> shows the driver's max CUDA support in the top-right.
-            On Mac, skip this — MPS needs no CUDA.</li>
-          <li>Install PyTorch from the official selector at <strong>pytorch.org/get-started/locally</strong> — it
+            On Mac, skip this. MPS needs no CUDA.</li>
+          <li>Install PyTorch from the official selector at <strong>pytorch.org/get-started/locally</strong>; it
             gives you the exact <code>pip install</code> command for your OS, CUDA version, and package manager.
             Do not deviate.</li>
           <li>Install Hugging Face libraries: <code>pip install transformers datasets accelerate peft trl</code>.</li>
@@ -301,7 +313,7 @@ print(json.dumps(SentimentResult.model_json_schema(), indent=2))</code></pre></d
 
         <div class="codeblock" data-tabs>
           <div class="codeblock__bar">
-            <span class="codeblock__lang"><span class="lamp"></span>python · hello world — load and generate</span>
+            <span class="codeblock__lang"><span class="lamp"></span>python · hello world: load and generate</span>
             <button class="tab" data-pane="local" aria-selected="true">Local · Mac/MPS</button>
             <button class="tab" data-pane="cloud">Cloud · CUDA</button>
             <button class="copybtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>copy</button>
@@ -358,7 +370,7 @@ text to predict the probability of the next token in a sequence.
         <p>
           Notice the structure: download tokenizer and model weights separately (both cached after first run), move
           the model to the target device, tokenize the input on the same device, run <code>model.generate()</code> inside
-          a <code>torch.no_grad()</code> context (disables gradient tracking — you don't need it for inference, and it
+          a <code>torch.no_grad()</code> context (disables gradient tracking: you don't need it for inference, and it
           saves memory), then decode back to text. This pattern repeats throughout the guide.
         </p>
 
@@ -369,7 +381,7 @@ text to predict the probability of the next token in a sequence.
             model's layer graph and the available devices (multiple GPUs, CPU RAM, even disk), then distribute the
             layers to fit. It generates a mapping like <code>{"model.embed_tokens": 0, "model.layers.0": 0,
             …, "model.layers.20": 1, …}</code>. Data is automatically transferred between devices as the forward
-            pass proceeds. This is how you run a 70B model across two 40 GB A100s — or even CPU-offload layers
+            pass proceeds. This is how you run a 70B model across two 40 GB A100s, or even CPU-offload layers
             that don't fit. For inference, <code>device_map="auto"</code> is almost always what you want on
             multi-GPU setups.</p>
           </div>
@@ -377,16 +389,16 @@ text to predict the probability of the next token in a sequence.
 
         <h2 id="recap">Recap</h2>
         <ul>
-          <li><strong>Python</strong> is a thin, scriptable interface over fast C++/CUDA kernels — not a performance bottleneck; the GPU is doing the work.</li>
+          <li><strong>Python</strong> is a thin, scriptable interface over fast C++/CUDA kernels, not a performance bottleneck; the GPU is doing the work.</li>
           <li><strong>PyTorch</strong> = NumPy + GPU execution + automatic differentiation. Tensors live on a device; <code>.backward()</code> computes gradients automatically for training.</li>
-          <li><strong>CUDA</strong> is NVIDIA's GPU compute layer; <strong>MPS</strong> is Apple's equivalent. VRAM is the critical resource — ~2 bytes per parameter in fp16. Version mismatches between driver and PyTorch CUDA build are the most common setup failure.</li>
+          <li><strong>CUDA</strong> is NVIDIA's GPU compute layer; <strong>MPS</strong> is Apple's equivalent. VRAM is the critical resource: ~2 bytes per parameter in fp16. Version mismatches between driver and PyTorch CUDA build are the most common setup failure.</li>
           <li>The <strong>Hugging Face Hub</strong> is GitHub + Docker Hub for model weights. Pull a model with <code>from_pretrained()</code>; the weights are cached locally. <code>transformers</code>, <code>datasets</code>, <code>peft</code>, <code>accelerate</code>, and <code>trl</code> are the key libraries that wrap it.</li>
-          <li><strong>pydantic</strong> is not an ML library — it is runtime type validation for Python. In LLM apps it is the contract layer between "generate some JSON" and "give me a typed Python object."</li>
+          <li><strong>pydantic</strong> is not an ML library; it is runtime type validation for Python. In LLM apps it is the contract layer between "generate some JSON" and "give me a typed Python object."</li>
           <li>Environment setup: isolated venv or conda, PyTorch installed from pytorch.org for your exact CUDA version, then Hugging Face libraries. Don't skip the verification step.</li>
         </ul>
         <p>
           With the stack understood, Plate 04 dives into the first thing a model actually does with your text:
-          tokenization — why it works the way it does, and why it quietly explains many of an LLM's strangest behaviors.
+          tokenization (why it works the way it does, and why it quietly explains many of an LLM's strangest behaviors).
         </p>
       </article>
 

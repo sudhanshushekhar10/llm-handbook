@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 05 · The Transformer — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The Transformer — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Attention, multi-head, positional encoding — the engine of it all.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/05-transformer.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Transformer — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Attention, multi-head, positional encoding — the engine of it all.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Attention, multi-head attention, and positional encoding — how the Transformer replaced recurrence and became the engine of every modern LLM.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 05 · Part II — How LLMs Work</div>
           <h1>The Transformer</h1>
-          <p class="standfirst">One architecture sits underneath ChatGPT, Llama, Claude, and almost everything else. It replaced a decade of recurrent networks with a single, parallelizable idea: <em>attention</em>. Here is how it actually works — and why it won.</p>
+          <p class="standfirst">One architecture sits underneath ChatGPT, Llama, Claude, and almost everything else. It replaced a decade of recurrent networks with a single, parallelizable idea: <em>attention</em>. Here is how it actually works, and why it won.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 18 min</span>
             <span><b>Prereqs</b> · Plates 04, 06</span>
@@ -55,19 +67,19 @@
           Before 2017, the state of the art in sequence modelling was the <strong>recurrent neural network</strong> (RNN), and
           its better-behaved cousin the LSTM. The mental model is a <code>for</code> loop: read one token, update a hidden
           state, read the next token, update again. The hidden state is the network's entire memory of everything it has seen
-          so far — a single fixed-size vector carried forward step by step.
+          so far, a single fixed-size vector carried forward step by step.
         </p>
         <p>
           This had two fatal problems. First, it is inherently <em>sequential</em>: to compute step 1,000 you must first
           compute steps 1 through 999. You cannot parallelize across the sequence, which is exactly the thing GPUs are good at.
-          Second, that single carried-forward vector is a bottleneck — by the time a long sentence ends, the beginning has been
+          Second, that single carried-forward vector is a bottleneck; by the time a long sentence ends, the beginning has been
           squeezed and overwritten. The 2014 sequence-to-sequence work<a class="cite" data-ref="sutskever2014"></a> made
           translation work, but long inputs degraded badly.
         </p>
 
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>An RNN is a <strong>stream processor with a single mutable accumulator</strong> — like folding a list with one
+          <p>An RNN is a <strong>stream processor with a single mutable accumulator</strong>, like folding a list with one
           register of state. It's correct, but it can't be sharded across workers (each step depends on the last), and the
           accumulator loses early information. The Transformer is the move to a <strong>random-access</strong> model: every
           token can read every other token directly, and the whole thing is one big parallel matrix multiply.</p>
@@ -91,7 +103,7 @@
           <span class="gloss" data-term="attention">Attention</span> is a <strong>soft, differentiable hashmap</strong>. The
           query is compared against <em>all</em> keys, producing a similarity score for each. Those scores are turned into
           weights that sum to 1 (via <span class="gloss" data-term="softmax">softmax</span>), and the result is a
-          weighted blend of <em>all</em> the values — mostly the ones whose keys matched best. Nothing is discrete, so the
+          weighted blend of <em>all</em> the values, mostly the ones whose keys matched best. Nothing is discrete, so the
           whole operation is differentiable and can be learned by gradient descent.
         </p>
 
@@ -99,7 +111,7 @@
           <div class="callout__tag">Analogy · the database join</div>
           <p>Think of a SQL join where, instead of <code>key = key</code> (exact match), the join condition is a
           <em>similarity score</em>, and instead of returning matching rows you return a weighted average of all rows.
-          "Query, Key, Value" is not a coincidence of naming — attention really is a fuzzy, learned lookup table.</p>
+          "Query, Key, Value" is not a coincidence of naming: attention really is a fuzzy, learned lookup table.</p>
         </div>
 
         <p>Play with it. Each row below is a token doing the "looking" (the query); the columns are the tokens it can look at
@@ -109,7 +121,7 @@
 
         <h2 id="self-attention">Self-attention, step by step</h2>
         <p>
-          In an LLM, the queries, keys, and values all come from the <em>same</em> sequence — hence
+          In an LLM, the queries, keys, and values all come from the <em>same</em> sequence, hence
           <span class="gloss" data-term="self-attention">self-attention</span>. Each token's embedding (from Plate 04) is
           projected three ways, by three learned weight matrices, into a query vector, a key vector, and a value vector.
           Then every token's query is dotted against every token's key to get raw scores, those are scaled and softmaxed
@@ -162,7 +174,7 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
 
         <p>
           That <code>/ d_k**0.5</code> is the "scaled" in <em>scaled dot-product attention</em>. Without it, dot products grow
-          with dimension, pushing softmax into saturated regions where gradients vanish. A tiny detail with a big effect —
+          with dimension, pushing softmax into saturated regions where gradients vanish. A tiny detail with a big effect:
           the kind of thing that separates a paper that works from one that doesn't.
         </p>
 
@@ -173,7 +185,7 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
             <p style="font-family:var(--font-mono);text-align:center;font-size:1.05rem;color:var(--accent-deep)">
               Attention(Q, K, V) = softmax( Q·Kᵀ / √d<sub>k</sub> ) · V
             </p>
-            <p><code>Q·Kᵀ</code> is an (n × n) matrix of every-token-against-every-token similarity — this is the
+            <p><code>Q·Kᵀ</code> is an (n × n) matrix of every-token-against-every-token similarity; this is the
             <strong>quadratic cost</strong> of attention, the reason context windows are expensive and the target of a
             decade of optimizations (FlashAttention<a class="cite" data-ref="dao2022"></a>, sparse and linear attention,
             and the state-space models of Plate 15<a class="cite" data-ref="gu2023"></a>). Softmax converts raw scores into
@@ -186,7 +198,7 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
         <p>
           One attention operation learns one notion of "relevance." But language has many simultaneous relationships: subject–verb
           agreement, what a pronoun refers to, positional proximity, topical similarity. So we run several attention operations
-          in parallel — <span class="gloss" data-term="multi-head">multi-head attention</span> — each with its own learned
+          in parallel (<span class="gloss" data-term="multi-head">multi-head attention</span>), each with its own learned
           Q/K/V projections operating in a smaller subspace, then concatenate their outputs.
         </p>
         <div class="callout callout--analogy">
@@ -198,21 +210,21 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
         <p>
           Modern models shave the cost of this with <span class="gloss" data-term="gqa">Grouped-Query Attention</span>, which
           shares keys and values across heads to shrink the <span class="gloss" data-term="kv-cache">KV cache</span> at
-          inference time<a class="cite" data-ref="ainslie2023"></a> — we'll meet that in Plates 14 and 15.
+          inference time<a class="cite" data-ref="ainslie2023"></a>; we'll meet that in Plates 14 and 15.
         </p>
 
         <h2 id="the-block">The rest of the block</h2>
         <p>Attention mixes information <em>between</em> tokens. A complete Transformer block wraps it with three more pieces:</p>
         <ul>
           <li><strong><span class="gloss" data-term="positional-encoding">Positional encoding</span>.</strong> Attention is
-            order-blind — shuffle the tokens and the math is unchanged. So we inject position information into the embeddings.
+            order-blind. Shuffle the tokens and the math is unchanged. So we inject position information into the embeddings.
             Today this is usually <span class="gloss" data-term="rope">RoPE</span><a class="cite" data-ref="su2021"></a>,
             which rotates query/key vectors by an angle proportional to position and extends gracefully to long contexts.</li>
           <li><strong>Residual connections + LayerNorm.</strong> Each sub-layer's output is <em>added</em> to its input
             (a residual/skip connection) and normalized. This is what lets us stack dozens of layers without the signal
-            exploding or vanishing — the same trick that made very deep vision networks trainable.</li>
+            exploding or vanishing: the same trick that made very deep vision networks trainable.</li>
           <li><strong>Feed-forward network (FFN).</strong> After tokens mix via attention, each token is independently pushed
-            through a small two-layer MLP. This is where much of a model's raw "knowledge" capacity lives — and the part that
+            through a small two-layer MLP. This is where much of a model's raw "knowledge" capacity lives, and the part that
             <span class="gloss" data-term="moe">Mixture-of-Experts</span> later makes sparse.</li>
         </ul>
 
@@ -264,7 +276,7 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
 
         <h2 id="encoder-decoder">Stacking up: encoder, decoder, and why GPT-style won</h2>
         <p>
-          The 2017 architecture had two halves — an <strong>encoder</strong> (reads the whole input at once, bidirectional)
+          The 2017 architecture had two halves: an <strong>encoder</strong> (reads the whole input at once, bidirectional)
           and a <strong>decoder</strong> (generates output left-to-right, masked so it can't see the future). Three families
           grew from this:
         </p>
@@ -273,24 +285,24 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
             <thead><tr><th>Family</th><th>Shape</th><th>Sees</th><th>Best at</th><th>Example</th></tr></thead>
             <tbody>
               <tr><td><b>Encoder-only</b></td><td>Bidirectional</td><td>Whole input at once</td><td>Understanding / classification / embeddings</td><td>BERT<a class="cite" data-ref="devlin2018"></a></td></tr>
-              <tr><td><b>Decoder-only</b></td><td>Causal (masked)</td><td>Only the past</td><td>Generation — i.e. being a chatbot</td><td>GPT<a class="cite" data-ref="radford2018"></a>, Llama</td></tr>
+              <tr><td><b>Decoder-only</b></td><td>Causal (masked)</td><td>Only the past</td><td>Generation, i.e. being a chatbot</td><td>GPT<a class="cite" data-ref="radford2018"></a>, Llama</td></tr>
               <tr><td><b>Encoder–decoder</b></td><td>Both</td><td>Input fully, output causally</td><td>Translation / summarization</td><td>T5, the original Transformer</td></tr>
             </tbody>
           </table>
         </div>
 
         <div class="callout callout--win">
-          <div class="callout__tag">What won — and why</div>
+          <div class="callout__tag">What won, and why</div>
           <p><strong>Decoder-only models took over.</strong> A single objective (predict the next token) on raw web text scales
-          beautifully, requires no labelled data, and — surprisingly — produces models that can <em>also</em> classify,
+          beautifully, requires no labelled data, and (surprisingly) produces models that can <em>also</em> classify,
           translate, and summarize when simply asked. One architecture, one objective, all tasks. BERT-style encoders are
           still the right tool for embeddings and retrieval (Plates 04 &amp; 17), but the chatbots you know are decoder-only.</p>
         </div>
         <div class="callout callout--fail">
-          <div class="callout__tag">What didn't — and why</div>
+          <div class="callout__tag">What didn't, and why</div>
           <p>Pure recurrence (RNN/LSTM) faded because it couldn't be parallelized across the sequence and lost long-range
           information. Ironically, efficiency pressure has revived recurrence-like ideas: <span class="gloss" data-term="moe">state-space
-          models</span> such as Mamba<a class="cite" data-ref="gu2023"></a> reintroduce linear-time sequential processing —
+          models</span> such as Mamba<a class="cite" data-ref="gu2023"></a> reintroduce linear-time sequential processing,
           but with modern tricks that fix the old problems. The pendulum swings; the lessons compound.</p>
         </div>
 
@@ -299,7 +311,7 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
           <div class="ref-card">
             <span class="yr">2017</span>
             <div><cite>Attention Is All You Need</cite>
-              <span class="auth">Vaswani, Shazeer, Parmar, et&nbsp;al. — NeurIPS 2017</span>
+              <span class="auth">Vaswani, Shazeer, Parmar, et&nbsp;al., NeurIPS 2017</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">Introduced the Transformer and scaled dot-product attention.
               Among the most-cited papers of the century; essentially every model in this guide is a descendant.
               <a href="../references.html#ref-9">See reference&nbsp;[9] →</a></p>
@@ -310,10 +322,10 @@ torch.Size([1, 5, 5])    # a 5×5 attention matrix — exactly what the widget d
         <h2 id="recap">Recap</h2>
         <ul>
           <li><strong>Attention</strong> is a soft, differentiable lookup: compare a query to all keys, return a weighted blend of values.</li>
-          <li><strong>Self-attention</strong> lets every token gather context from every other token in parallel — the death of the RNN bottleneck.</li>
+          <li><strong>Self-attention</strong> lets every token gather context from every other token in parallel: the death of the RNN bottleneck.</li>
           <li><strong>Multi-head</strong> runs many such lookups at once; <strong>positional encoding</strong>, <strong>residuals + LayerNorm</strong>, and a per-token <strong>FFN</strong> complete the block.</li>
           <li>Stack <em>N</em> blocks → a model. <strong>Decoder-only</strong> (GPT-style) became the dominant design for generation.</li>
-          <li>The expensive part is attention's quadratic token-to-token matrix — the thing Plates 13–15 spend their time taming.</li>
+          <li>The expensive part is attention's quadratic token-to-token matrix, the thing Plates 13–15 spend their time taming.</li>
         </ul>
         <p>Next, Plate 06 turns this architecture into actual words: parameters, the forward pass, logits, and the sampling
           knobs (<span class="gloss" data-term="temperature">temperature</span>, <span class="gloss" data-term="top-p">top-p</span>)

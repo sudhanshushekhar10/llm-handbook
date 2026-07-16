@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 18 · The Ecosystem &amp; How to Contribute — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The Ecosystem &amp; How to Contribute — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="The Hub, licenses, the papers to follow, and your first contribution.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/18-ecosystem-contributing.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Ecosystem &amp; How to Contribute — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="The Hub, licenses, the papers to follow, and your first contribution.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Navigating the Hugging Face Hub, model licenses, key libraries, staying current with research, and making your first real contribution to open-source LLM work.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -54,7 +66,7 @@
           If you've used npm or PyPI, you understand the <span class="gloss" data-term="huggingface">Hugging Face Hub</span> intuitively: it's a registry of versioned artifacts (models, datasets, evaluation results), with a standard API for pushing and pulling them. The difference is that your "packages" are multi-gigabyte weight files, not kilobyte tarballs.
         </p>
         <p>
-          Every model on the Hub has a <strong>model card</strong> — a structured README that covers training data, intended use, known limitations, evaluation results, and the license. A good model card is like a good API reference: it tells you what the model will and won't do before you deploy it. Bad model cards are a common source of production incidents.
+          Every model on the Hub has a <strong>model card</strong>: a structured README that covers training data, intended use, known limitations, evaluation results, and the license. A good model card is like a good API reference: it tells you what the model will and won't do before you deploy it. Bad model cards are a common source of production incidents.
         </p>
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
@@ -114,8 +126,8 @@ Architecture: llama, heads: 32
           <table>
             <thead><tr><th>License</th><th>Key restriction</th><th>Examples</th></tr></thead>
             <tbody>
-              <tr><td><strong>Apache 2.0</strong></td><td>None — commercial use, modification, distribution all OK</td><td>Falcon 7B, Mistral 7B (older), FLAN-T5</td></tr>
-              <tr><td><strong>MIT</strong></td><td>None — most permissive</td><td>Phi-2, Qwen2-0.5B</td></tr>
+              <tr><td><strong>Apache 2.0</strong></td><td>None: commercial use, modification, distribution all OK</td><td>Falcon 7B, Mistral 7B (older), FLAN-T5</td></tr>
+              <tr><td><strong>MIT</strong></td><td>None (most permissive)</td><td>Phi-2, Qwen2-0.5B</td></tr>
               <tr><td><strong>Llama 3 Community</strong></td><td>Can't use to train competing general-purpose LLMs; &gt;700M MAU requires Meta licence</td><td>Llama 3.x</td></tr>
               <tr><td><strong>CC BY-SA 4.0</strong></td><td>Share-alike: derivatives must use same licence</td><td>Some Stable Diffusion variants</td></tr>
               <tr><td><strong>Proprietary / Research-only</strong></td><td>No commercial use</td><td>OPT, some early Llama releases</td></tr>
@@ -124,7 +136,7 @@ Architecture: llama, heads: 32
         </div>
         <div class="callout callout--gotcha">
           <div class="callout__tag">Gotcha · "Llama" is not a licence type</div>
-          <p>Each Llama release has a different licence. Llama 2, Llama 3, Llama 3.1 all have distinct terms. Don't assume a fine-tune inherits a more permissive licence — if the base model is Llama 3, your fine-tune is also under the Llama 3 Community Licence. Always check the model card's <code>license:</code> field and the actual licence text, not just the badge.</p>
+          <p>Each Llama release has a different licence. Llama 2, Llama 3, Llama 3.1 all have distinct terms. Don't assume a fine-tune inherits a more permissive licence; if the base model is Llama 3, your fine-tune is also under the Llama 3 Community Licence. Always check the model card's <code>license:</code> field and the actual licence text, not just the badge.</p>
         </div>
 
         <h2 id="key-libraries">The library landscape</h2>
@@ -135,7 +147,7 @@ Architecture: llama, heads: 32
           <table>
             <thead><tr><th>Library</th><th>What it does</th><th>When to use it</th></tr></thead>
             <tbody>
-              <tr><td><code>transformers</code></td><td>Load and run any model from the Hub; the standard inference API</td><td>Always — it's the foundation</td></tr>
+              <tr><td><code>transformers</code></td><td>Load and run any model from the Hub; the standard inference API</td><td>Always, it's the foundation</td></tr>
               <tr><td><code>peft</code></td><td>LoRA, QLoRA, and other PEFT methods; wraps transformers models</td><td>Fine-tuning with limited VRAM</td></tr>
               <tr><td><code>trl</code></td><td>SFT, RLHF, DPO training loops built on peft + transformers</td><td>Full fine-tuning pipeline</td></tr>
               <tr><td><code>datasets</code></td><td>HF dataset loading, streaming, processing, from Hub or local</td><td>Data prep for training/eval</td></tr>
@@ -155,7 +167,7 @@ Architecture: llama, heads: 32
         </p>
         <ul>
           <li><strong>arXiv cs.CL and cs.LG</strong>: The primary venue. Subscribe to the weekly digest or use <em>arxiv-sanity</em> / <em>Papers With Code</em> to filter by topic and citation velocity.</li>
-          <li><strong>Hugging Face Blog</strong> and <strong>Mistral Blog</strong>: High signal — they explain papers accompanying model releases with engineering context.</li>
+          <li><strong>Hugging Face Blog</strong> and <strong>Mistral Blog</strong>: High signal: they explain papers accompanying model releases with engineering context.</li>
           <li><strong>Lilian Weng's blog</strong> (<em>lilianweng.github.io</em>): Deep, accurate long-form posts on specific topics (RLHF, agents, RAG). An excellent reference even when slightly dated.</li>
           <li><strong>Sebastian Raschka's newsletter</strong>: Annotated paper summaries for practitioners. Similar target audience to this guide.</li>
           <li><strong>r/LocalLLaMA</strong>: Noisy but fast. Quantized model benchmarks, GGUF quant comparisons, and first-person reports appear here days before anywhere else.</li>
@@ -170,19 +182,19 @@ Architecture: llama, heads: 32
           Contributing to LLM open source looks intimidating but has very accessible entry points. Here's a realistic progression, each building on the previous:
         </p>
         <p>
-          <strong>Level 1 — Fix a doc bug.</strong> Model cards are often out of date. If you find an error in a README or a broken code example, open a PR. Model card PRs on the Hub use the web editor; no local setup needed. This gets you comfortable with the contributor workflow.
+          <strong>Level 1: Fix a doc bug.</strong> Model cards are often out of date. If you find an error in a README or a broken code example, open a PR. Model card PRs on the Hub use the web editor; no local setup needed. This gets you comfortable with the contributor workflow.
         </p>
         <p>
-          <strong>Level 2 — Share a fine-tune.</strong> Fine-tune a model on a domain-specific dataset using what you learned in Plates 10–12. Push it to the Hub with a model card. This is a real contribution that others can build on.
+          <strong>Level 2: Share a fine-tune.</strong> Fine-tune a model on a domain-specific dataset using what you learned in Plates 10–12. Push it to the Hub with a model card. This is a real contribution that others can build on.
         </p>
         <p>
-          <strong>Level 3 — Add an evaluation.</strong> Run <code>lm-evaluation-harness</code> on a model that lacks benchmark results. Open a PR to the model card adding the numbers. Evaluation is unglamorous but genuinely useful work.
+          <strong>Level 3: Add an evaluation.</strong> Run <code>lm-evaluation-harness</code> on a model that lacks benchmark results. Open a PR to the model card adding the numbers. Evaluation is unglamorous but genuinely useful work.
         </p>
         <p>
-          <strong>Level 4 — Improve a library.</strong> Add a missing feature or fix a bug in <code>transformers</code>, <code>peft</code>, or <code>trl</code>. These are large codebases but they're well-organized. Start by filtering issues tagged <code>good first issue</code>.
+          <strong>Level 4: Improve a library.</strong> Add a missing feature or fix a bug in <code>transformers</code>, <code>peft</code>, or <code>trl</code>. These are large codebases but they're well-organized. Start by filtering issues tagged <code>good first issue</code>.
         </p>
         <p>
-          <strong>Level 5 — Publish a dataset.</strong> Curate, clean, and publish a domain-specific instruction dataset. Datasets are chronically undersupplied relative to model releases. A high-quality 10K example dataset for a niche domain is genuinely valuable to the community.
+          <strong>Level 5: Publish a dataset.</strong> Curate, clean, and publish a domain-specific instruction dataset. Datasets are chronically undersupplied relative to model releases. A high-quality 10K example dataset for a niche domain is genuinely valuable to the community.
         </p>
 
         <div class="codeblock">
@@ -240,31 +252,31 @@ https://huggingface.co/your-username/llama-3.1-8b-domain-ft</code></pre>
 
         <h2 id="seminal-papers">Papers to read in depth</h2>
         <p>
-          You don't need to read every paper — but a handful are worth reading in full because they shaped <em>how the field thinks</em>. In rough order of importance to a practitioner:
+          You don't need to read every paper, but a handful are worth reading in full because they shaped <em>how the field thinks</em>. In rough order of importance to a practitioner:
         </p>
         <div class="callout callout--paper">
           <div class="callout__tag">The essential reading list</div>
           <div class="ref-card"><span class="yr">2017</span>
             <div><cite>Attention Is All You Need</cite>
-              <span class="auth">Vaswani et al. — Google Brain</span>
+              <span class="auth">Vaswani et al., Google Brain</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">The architecture everything is built on. Read it once, carefully. <a href="../references.html#ref-8">See reference [8] →</a></p>
             </div>
           </div>
           <div class="ref-card" style="margin-top:.75rem"><span class="yr">2021</span>
             <div><cite>LoRA: Low-Rank Adaptation of Large Language Models</cite>
-              <span class="auth">Hu et al. — Microsoft</span>
+              <span class="auth">Hu et al., Microsoft</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">The fine-tuning method everyone uses. Short paper, clear math. <a href="../references.html#ref-20">See reference [20] →</a></p>
             </div>
           </div>
           <div class="ref-card" style="margin-top:.75rem"><span class="yr">2022</span>
             <div><cite>Training language models to follow instructions with human feedback (InstructGPT)</cite>
-              <span class="auth">Ouyang et al. — OpenAI</span>
+              <span class="auth">Ouyang et al., OpenAI</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">How RLHF made models actually useful. The methodology behind ChatGPT. <a href="../references.html#ref-28">See reference [28] →</a></p>
             </div>
           </div>
           <div class="ref-card" style="margin-top:.75rem"><span class="yr">2022</span>
             <div><cite>Training Compute-Optimal Large Language Models (Chinchilla)</cite>
-              <span class="auth">Hoffmann et al. — DeepMind</span>
+              <span class="auth">Hoffmann et al., DeepMind</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">Why we now train smaller models on more data. Changed the entire training strategy. <a href="../references.html#ref-25">See reference [25] →</a></p>
             </div>
           </div>
@@ -282,13 +294,13 @@ https://huggingface.co/your-username/llama-3.1-8b-domain-ft</code></pre>
         </ul>
         <div class="callout callout--win">
           <div class="callout__tag">The deepest insight</div>
-          <p>LLMs are not magic — they are software systems with engineering trade-offs like any other. The weights are just numbers; the attention mechanism is a differentiable operation; the training loop is gradient descent on a loss function. You already had the instincts to understand this. You now have the vocabulary too. The field is yours to contribute to.</p>
+          <p>LLMs are not magic; they are software systems with engineering trade-offs like any other. The weights are just numbers; the attention mechanism is a differentiable operation; the training loop is gradient descent on a loss function. You already had the instincts to understand this. You now have the vocabulary too. The field is yours to contribute to.</p>
         </div>
 
         <h2 id="recap">Recap</h2>
         <ul>
           <li>The <strong>Hugging Face Hub</strong> is the central registry for models, datasets, and evals. Every model is a Git repo; <code>from_pretrained()</code> is a git clone under the hood.</li>
-          <li><strong>Licenses vary</strong> significantly across models. Read the actual licence text before deploying commercially — Llama 3, Mistral, and Apache 2.0 all mean different things.</li>
+          <li><strong>Licenses vary</strong> significantly across models. Read the actual licence text before deploying commercially. Llama 3, Mistral, and Apache 2.0 all mean different things.</li>
           <li>The <strong>core libraries</strong> are <code>transformers</code> (inference) → <code>peft</code> / <code>trl</code> (fine-tuning) → <code>accelerate</code> (multi-GPU) → <code>vllm</code> / <code>ollama</code> (serving). Most other tools compose these.</li>
           <li><strong>Staying current</strong>: track primitives not frameworks; follow arXiv cs.CL, HF Blog, and Lilian Weng; use r/LocalLLaMA for early practitioner signal.</li>
           <li><strong>Contributing</strong> has multiple entry points: fix a model card, share a fine-tune, add eval results, fix a library bug, publish a dataset. Start small, build reputation.</li>

@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 14 · Inference &amp; Serving — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Inference &amp; Serving — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="KV cache, batching, vLLM, llama.cpp, Ollama — running at speed.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/14-inference-serving.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Inference &amp; Serving — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="KV cache, batching, vLLM, llama.cpp, Ollama — running at speed.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="How LLMs actually run in production: the prefill/decode split, KV caches, continuous batching, PagedAttention, FlashAttention, speculative decoding, and how to pick a serving stack.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 14 · Part V — Efficient &amp; Deployable</div>
           <h1>Inference &amp; Serving</h1>
-          <p class="standfirst">An LLM talking to a single user on idle hardware is a solved problem. An LLM fielding thousands of concurrent requests with tight latency SLOs is a hard systems problem — one that looks surprisingly familiar once you understand the two phases of generation.</p>
+          <p class="standfirst">An LLM talking to a single user on idle hardware is a solved problem. An LLM fielding thousands of concurrent requests with tight latency SLOs is a hard systems problem: one that looks surprisingly familiar once you understand the two phases of generation.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 20 min</span>
             <span><b>Prereqs</b> · Plates 06, 13</span>
@@ -57,8 +69,8 @@
           splits into two very different workloads.
         </p>
         <p>
-          <strong>Prefill</strong> is the first pass: the entire prompt — say, 500 tokens of system instructions plus
-          your user message — is fed through the model <em>in one parallel forward pass</em>. Because all prompt tokens are
+          <strong>Prefill</strong> is the first pass: the entire prompt (say, 500 tokens of system instructions plus
+          your user message) is fed through the model <em>in one parallel forward pass</em>. Because all prompt tokens are
           available simultaneously, the GPU can compute attention across the full sequence in one shot, just like training.
           This is <em>compute-bound</em>: the GPU's tensor cores are the bottleneck.
         </p>
@@ -66,19 +78,19 @@
           <strong>Decode</strong> is everything after: generating the response one <span class="gloss" data-term="autoregressive">autoregressive</span>
           token at a time. Each new token depends on all previous ones, so the model does a separate forward pass per token.
           There's no way to parallelise within a sequence. Worse, the model loads nearly all of its weights from GPU memory
-          for every single token — and generates only a handful of floating-point results in return. This is
+          for every single token, and generates only a handful of floating-point results in return. This is
           <em>memory-bandwidth-bound</em>: the GPU spends most of its time waiting for memory, not computing.
         </p>
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
           <p>Prefill is like a batch job: lots of data, fully parallelisable, predictable duration. Decode is like a
           tight request/response loop: one result per round-trip, dominated by I/O latency. The serving stack has to handle
-          both modes efficiently at the same time — with different batching strategies for each.</p>
+          both modes efficiently at the same time, with different batching strategies for each.</p>
         </div>
 
         <p>
           The implication for metrics is immediate. <strong>Time to first token (TTFT)</strong> is determined almost entirely
-          by prefill latency — how quickly the server can process your prompt. <strong>Tokens per second</strong> during
+          by prefill latency: how quickly the server can process your prompt. <strong>Tokens per second</strong> during
           decode is determined by how fast weights can be streamed from GPU HBM. A GPU with more memory bandwidth (not just
           raw FLOPs) produces faster generation on long outputs.
         </p>
@@ -87,7 +99,7 @@
         <p>
           Consider what the decode phase actually computes. At each step, <span class="gloss" data-term="attention">attention</span>
           asks: given the current query token, what do all the previous keys and values say? But those previous keys and values
-          haven't changed — they were computed during prefill and earlier decode steps. Recomputing them from scratch on every
+          haven't changed; they were computed during prefill and earlier decode steps. Recomputing them from scratch on every
           single decode step would be catastrophically wasteful.
         </p>
         <p>
@@ -100,7 +112,7 @@
           <p>If you've ever written a recursive Fibonacci function and then added a cache to avoid recomputing sub-results,
           you've done exactly this. The KV cache is <code>@lru_cache</code> for the attention layer: the first forward pass
           is expensive (like computing fib(30) from scratch), and every subsequent decode step is cheap (like returning the
-          cached result). The tradeoff is the same too — you trade memory for time.</p>
+          cached result). The tradeoff is the same too; you trade memory for time.</p>
         </div>
         <p>
           The catch: KV cache memory is large and grows with every token generated. For a single request, the cache holds
@@ -110,24 +122,24 @@
         <pre style="background:var(--surface-2);padding:1rem;border-radius:6px;overflow-x:auto"><code>2 (K+V) × 80 layers × 8 heads × 128 dim × 2,048 tokens × 2 bytes
 ≈ 1.3 GB for a single request</code></pre>
         <p>
-          Multiply by 50 concurrent requests and you've consumed 65 GB — which may exceed the space available for weights.
+          Multiply by 50 concurrent requests and you've consumed 65 GB, which may exceed the space available for weights.
           This is the central resource-management problem of LLM serving.
         </p>
         <div class="callout callout--gotcha">
           <div class="callout__tag">Gotcha · KV cache memory explodes at long context</div>
           <p>KV cache size scales linearly with <span class="gloss" data-term="context-window">context window</span> length
           <em>and</em> with the number of concurrent requests. A 128K-context model serving 20 parallel users can need
-          hundreds of gigabytes of KV cache — more than the weights themselves. This is exactly why
+          hundreds of gigabytes of KV cache, more than the weights themselves. This is exactly why
           <span class="gloss" data-term="gqa">GQA</span> (Grouped Query Attention, Plate 15) was invented: sharing key and
           value heads across groups of query heads cuts the KV cache by 4–8× at no meaningful quality cost. And it's why
           <span class="gloss" data-term="quantization">quantization</span> (Plate 13) of the KV cache itself is increasingly
-          common — storing K/V in int8 instead of fp16 halves cache memory.</p>
+          common: storing K/V in int8 instead of fp16 halves cache memory.</p>
         </div>
 
         <h2 id="batching">Batching: keeping the GPU busy</h2>
         <p>
-          A GPU running decode for a <em>single request</em> is nearly idle — it loads gigabytes of weights to compute a
-          handful of values per token. The utilisation numbers are dismal: often below 5%. The fix is batching — processing
+          A GPU running decode for a <em>single request</em> is nearly idle: it loads gigabytes of weights to compute a
+          handful of values per token. The utilisation numbers are dismal: often below 5%. The fix is batching: processing
           multiple requests through the same forward pass so those weight loads are amortised across many concurrent decode
           steps.
         </p>
@@ -156,7 +168,7 @@
         <p>
           Continuous batching is only half the story. The second problem is KV cache <em>fragmentation</em>. Because
           requests vary in length and arrive at different times, a naively managed contiguous KV cache ends up with
-          fragmented free blocks — similar to heap fragmentation in a long-running process. You might have 40 GB free in
+          fragmented free blocks, similar to heap fragmentation in a long-running process. You might have 40 GB free in
           theory but be unable to allocate a contiguous 2 GB block for a new long request.
         </p>
         <p>
@@ -173,7 +185,7 @@
           <div class="callout__tag">Key paper</div>
           <div class="ref-card"><span class="yr">2023</span>
             <div><cite>Efficient Memory Management for Large Language Model Serving with PagedAttention</cite>
-              <span class="auth">Kwon et al. — SOSP 2023</span>
+              <span class="auth">Kwon et al., SOSP 2023</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">Introduced the virtual-memory abstraction for KV caches,
               enabling near-zero waste and prefix sharing. The core innovation behind vLLM.
               <a href="../references.html#ref-43">See reference [43] →</a></p>
@@ -184,7 +196,7 @@
         <p>
           vLLM combines PagedAttention with continuous batching into a single serving engine. It exposes an
           OpenAI-compatible REST API, making it a drop-in replacement for most applications. On GPU clusters, vLLM
-          consistently achieves 3–10× higher throughput than naive serving because the GPU stays saturated — no wasted
+          consistently achieves 3–10× higher throughput than naive serving because the GPU stays saturated, no wasted
           cycles waiting on long-tail requests or fragmented memory.
         </p>
 
@@ -195,7 +207,7 @@
         <h3>FlashAttention</h3>
         <p>
           Standard attention computes the full N×N attention matrix and materialises it in GPU HBM (high-bandwidth memory).
-          For a 4K-token sequence, that's a 4,096 × 4,096 matrix of floats — 64 MB per layer, and it must be written and
+          For a 4K-token sequence, that's a 4,096 × 4,096 matrix of floats (64 MB per layer), and it must be written and
           read twice (once to compute softmax, once to weight the values).
           <span class="gloss" data-term="flashattention">FlashAttention</span><a class="cite" data-ref="dao2022"></a>
           is an IO-aware rewrite of the attention kernel: it never materialises the full matrix. Instead, it tiles the
@@ -206,7 +218,7 @@
         </p>
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>FlashAttention is a kernel-level cache-oblivious algorithm — the LLM equivalent of blocking a matrix
+          <p>FlashAttention is a kernel-level cache-oblivious algorithm: the LLM equivalent of blocking a matrix
           multiply to fit in L3 cache. It doesn't change the math at all; it changes the memory access pattern.
           A GPU's SRAM is 1,000× faster than HBM, so eliminating the round-trips to HBM is the entire win.
           Same output. Radically different I/O profile.</p>
@@ -217,14 +229,14 @@
           Speculative decoding<a class="cite" data-ref="leviathan2022"></a> attacks the fundamental bottleneck of
           autoregressive generation from a different angle. Observation: the large model (the "verifier") is doing one
           token per step, but a much smaller <em>draft model</em> (say, 1B instead of 70B) can generate several tokens
-          almost instantly. Those draft tokens are probably right most of the time — simple continuations are predictable.
+          almost instantly. Those draft tokens are probably right most of the time; simple continuations are predictable.
         </p>
         <p>
           The trick: run the draft model for <em>k</em> steps to produce <em>k</em> candidate tokens, then feed all
           <em>k+1</em> positions (prompt + drafts) to the large model in a <em>single parallel forward pass</em> for
           verification. If the large model agrees on position <em>i</em>, accept it; when it first disagrees, reject from
           that point and substitute the large model's token. On easy, predictable text (code comments, bullet lists,
-          boilerplate), acceptance rates of 70–90% are typical — meaning you get 3–5 effective tokens for the cost of one
+          boilerplate), acceptance rates of 70–90% are typical, meaning you get 3–5 effective tokens for the cost of one
           large-model forward pass. Throughput goes up; correctness is guaranteed by construction.
         </p>
         <p>
@@ -409,7 +421,7 @@ TTFT: 147 ms   # prefill of a short prompt on a laptop CPU via Ollama</code></pr
         <p>
           The fundamental tension: increasing batch size improves GPU utilisation (throughput goes up) but also increases
           queuing delay for new requests (TTFT goes up). A well-tuned continuous batching engine finds the operating point
-          that saturates the GPU without letting queue depths grow unbounded — exactly the problem any async backend
+          that saturates the GPU without letting queue depths grow unbounded, exactly the problem any async backend
           engineer has solved in a different context.
         </p>
         <p>
@@ -428,9 +440,9 @@ TTFT: 147 ms   # prefill of a short prompt on a laptop CPU via Ollama</code></pr
           <li><strong>FlashAttention</strong> is an IO-aware kernel that avoids materialising the N×N attention matrix, giving exact attention at O(N) memory.</li>
           <li><strong>Speculative decoding</strong> uses a cheap draft model to propose tokens in parallel; the large model verifies them in one forward pass, giving 3–5× effective throughput on predictable text.</li>
           <li>Stack choice: <strong>vLLM</strong> or <strong>TGI</strong> for GPU production; <strong>SGLang</strong> for prefix-heavy workloads; <strong>Ollama/llama.cpp</strong> for local development.</li>
-          <li>Watch <strong>TTFT</strong>, <strong>TPOT</strong>, and <strong>system throughput</strong>. Latency and throughput trade off — continuous batching is what keeps both acceptable simultaneously.</li>
+          <li>Watch <strong>TTFT</strong>, <strong>TPOT</strong>, and <strong>system throughput</strong>. Latency and throughput trade off; continuous batching is what keeps both acceptable simultaneously.</li>
         </ul>
-        <p>The serving layer is now efficient. The next question is the shape of the model itself — giant parameter counts, smarter attention, and architectures that aren't transformers at all. Next: advanced architectures.</p>
+        <p>The serving layer is now efficient. The next question is the shape of the model itself: giant parameter counts, smarter attention, and architectures that aren't transformers at all. Next: advanced architectures.</p>
       </article>
 
       <nav class="pager" id="pager"></nav>

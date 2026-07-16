@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 13 · Quantization &amp; GGUF — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Quantization &amp; GGUF — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Shrinking models from fp32 to int4 with minimal quality loss.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/13-quantization.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Quantization &amp; GGUF — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Shrinking models from fp32 to int4 with minimal quality loss.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Shrinking models with lower numeric precision: fp16, int8, int4, GPTQ, AWQ, and the GGUF/llama.cpp k-quants that run LLMs on laptops.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 13 · Part V — Efficient &amp; Deployable</div>
           <h1>Quantization &amp; GGUF</h1>
-          <p class="standfirst">A 70B model in full precision is ~140 GB — it won't fit anywhere cheap. Quantization stores the weights at lower numeric precision, trading a sliver of quality for a 4× shrink. It's the reason a capable LLM now runs on your laptop.</p>
+          <p class="standfirst">A 70B model in full precision is ~140 GB; it won't fit anywhere cheap. Quantization stores the weights at lower numeric precision, trading a sliver of quality for a 4× shrink. It's the reason a capable LLM now runs on your laptop.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 17 min</span>
             <span><b>Prereqs</b> · Plate 06</span>
@@ -54,8 +66,8 @@
         <p>
           A model's weights are numbers, and numbers take space. In <code>fp32</code> (32-bit float) each
           <span class="gloss" data-term="parameter">parameter</span> is 4 bytes; in <code>fp16</code>, 2 bytes. Inference is
-          almost entirely <em>memory-bandwidth-bound</em> — the GPU spends its time hauling weights from memory, not doing
-          math — so smaller weights mean both a smaller footprint <strong>and</strong> faster generation. That's the double win.
+          almost entirely <em>memory-bandwidth-bound</em> (the GPU spends its time hauling weights from memory, not doing
+          math), so smaller weights mean both a smaller footprint <strong>and</strong> faster generation. That's the double win.
         </p>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · lowering the bit-depth of an image</div>
@@ -95,11 +107,11 @@
           squashed, distort everything. The research that made low-bit LLMs practical is mostly about handling those outliers:
         </p>
         <ul>
-          <li><strong>LLM.int8()</strong><a class="cite" data-ref="dettmers2022"></a> — keep the rare outlier dimensions in
+          <li><strong>LLM.int8()</strong><a class="cite" data-ref="dettmers2022"></a>: keep the rare outlier dimensions in
             16-bit and quantize the rest to int8. Near-lossless 8-bit, and the foundation of the <code>bitsandbytes</code> library.</li>
-          <li><strong>GPTQ</strong><a class="cite" data-ref="frantar2022"></a> — a one-shot, layer-by-layer method that
+          <li><strong>GPTQ</strong><a class="cite" data-ref="frantar2022"></a>: a one-shot, layer-by-layer method that
             compensates for the error each quantization step introduces. Fast 3–4 bit weights for GPU inference.</li>
-          <li><strong>AWQ</strong><a class="cite" data-ref="lin2023"></a> — "activation-aware": identify the small fraction
+          <li><strong>AWQ</strong><a class="cite" data-ref="lin2023"></a> ("activation-aware"): identify the small fraction
             of weights that matter most (judged by activation magnitudes) and protect them. Strong 4-bit quality and speed.</li>
         </ul>
         <div class="callout callout--swe">
@@ -112,15 +124,15 @@
         <h2 id="gguf">GGUF, llama.cpp, and the laptop revolution</h2>
         <p>
           On the CPU/consumer side, one project changed the game: <span class="gloss" data-term="llama-cpp">llama.cpp</span>,
-          a C/C++ engine that runs quantized models efficiently on ordinary hardware — including Apple Silicon via Metal. Its
+          a C/C++ engine that runs quantized models efficiently on ordinary hardware, including Apple Silicon via Metal. Its
           model format is <span class="gloss" data-term="gguf">GGUF</span>: a single file bundling the quantized weights, the
           tokenizer, and metadata.
         </p>
         <p>
-          GGUF's "<strong>k-quant</strong>" levels are the names you'll see everywhere — <code>Q4_K_M</code>, <code>Q5_K_M</code>,
+          GGUF's "<strong>k-quant</strong>" levels are the names you'll see everywhere: <code>Q4_K_M</code>, <code>Q5_K_M</code>,
           <code>Q8_0</code>, <code>Q2_K</code>. The number is roughly the bits per weight; <code>K</code> means a smarter
           mixed-precision scheme; <code>_M</code> / <code>_S</code> are medium/small variants. <strong>Q4_K_M</strong> is the
-          community default — about a quarter of the size of fp16 with quality almost indistinguishable in practice.
+          community default, about a quarter of the size of fp16 with quality almost indistinguishable in practice.
           <span class="gloss" data-term="ollama">Ollama</span> wraps all of this so <code>ollama run llama3.2</code> just works.
         </p>
 
@@ -172,9 +184,9 @@ shorter (blue) wavelengths of sunlight more than longer (red) ones...
         </div>
 
         <div class="callout callout--fail">
-          <div class="callout__tag">What breaks — and when</div>
+          <div class="callout__tag">What breaks, and when</div>
           <p>Below ~3 bits (e.g. <code>Q2_K</code>), quality degrades sharply: the model gets repetitive, loses instruction
-          following, and hallucinates more. And quantization compounds with everything else — a heavily quantized <em>and</em>
+          following, and hallucinates more. And quantization compounds with everything else; a heavily quantized <em>and</em>
           aggressively pruned <em>and</em> tiny model is often worse than a smaller model at a higher precision. Prefer a
           smaller model at Q4_K_M over a bigger one at Q2.</p>
         </div>
@@ -194,13 +206,13 @@ shorter (blue) wavelengths of sunlight more than longer (red) ones...
 
         <h2 id="recap">Recap</h2>
         <ul>
-          <li>Quantization stores weights at lower precision — a lossy codec that shrinks models ~4× and speeds up memory-bound inference.</li>
+          <li>Quantization stores weights at lower precision: a lossy codec that shrinks models ~4× and speeds up memory-bound inference.</li>
           <li><code>fp16/bf16</code> → <code>int8</code> → <code>int4</code>: quality holds well down to ~4 bits, then falls off a cliff.</li>
           <li>Good methods (<strong>LLM.int8, GPTQ, AWQ</strong>) work by protecting outlier weights.</li>
           <li><strong>GGUF + llama.cpp</strong> (and Ollama) brought quantized models to laptops; <strong>Q4_K_M</strong> is the default sweet spot.</li>
           <li>Rule of thumb: a smaller model at Q4_K_M usually beats a larger model crushed to Q2.</li>
         </ul>
-        <p>A small, fast model is only useful if you can serve it well. Next: inference and serving — KV caches, batching, and the engines that make it fly.</p>
+        <p>A small, fast model is only useful if you can serve it well. Next: inference and serving (KV caches, batching, and the engines that make it fly).</p>
       </article>
 
       <nav class="pager" id="pager"></nav>

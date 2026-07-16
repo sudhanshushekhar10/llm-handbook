@@ -600,8 +600,10 @@ td code { white-space: nowrap; }
    ---------------------------------------------------------------------------- */
 .topbar__center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   font-family: var(--font-mono); font-size: .74rem; letter-spacing: .03em; color: var(--text-3);
-  white-space: nowrap; pointer-events: none; }
+  white-space: nowrap; text-decoration: none; transition: color .15s var(--ease); }
 .topbar__center b { color: var(--text-2); font-weight: 600; }
+.topbar__center:hover { color: var(--text-2); }
+.topbar__center:hover b { text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
 @media (max-width: 900px) { .topbar__center { display: none; } }
 
 .hero__byline { font-family: var(--font-mono); font-size: .8rem; letter-spacing: .02em;
@@ -622,6 +624,75 @@ td code { white-space: nowrap; }
 .sitefooter a { color: var(--text-3); text-decoration: none; border-bottom: 1px solid var(--line); }
 .sitefooter a:hover { color: var(--text-2); border-color: var(--text-3); }
 .sitefooter__dot { opacity: .45; }
+
+/* ----------------------------------------------------------------------------
+   11c. SHARE — top-bar button + popover menu
+   ---------------------------------------------------------------------------- */
+.sharewrap { position: relative; display: inline-flex; }
+.sharemenu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; min-width: 208px;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); padding: .35rem;
+  opacity: 0; visibility: hidden; transform: translateY(-6px);
+  transition: opacity .15s var(--ease), transform .15s var(--ease), visibility .15s;
+}
+.sharemenu.open { opacity: 1; visibility: visible; transform: none; }
+.sharemenu__hd {
+  font-family: var(--font-mono); font-size: .58rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--text-3); padding: .4rem .55rem .3rem;
+}
+.sharemenu__sep { height: 1px; background: var(--line); margin: .3rem .35rem; }
+.sharemenu__item {
+  display: flex; align-items: center; gap: .6rem; width: 100%;
+  padding: .42rem .55rem; border: 0; border-radius: var(--radius); background: transparent;
+  font-family: var(--font-ui); font-size: .84rem; color: var(--text); text-decoration: none;
+  cursor: pointer; text-align: left;
+}
+.sharemenu__item:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sharemenu__item.is-done { color: var(--accent); }
+.si { width: 18px; height: 18px; flex: none; display: grid; place-items: center; color: var(--text-2); line-height: 0; }
+.si svg { width: 100%; height: 100%; display: block; }
+.si__y { font-family: var(--font-mono); font-weight: 800; font-size: 15px; line-height: 1; }
+/* each platform's true colour, revealed only on hover */
+.si--x  { --brand: #000; }      .si--li { --brand: #0A66C2; }
+.si--hn { --brand: #FF6600; }   .si--rd { --brand: #FF4500; }
+.si--bs { --brand: #1185FE; }   .si--wa { --brand: #25D366; }
+.si--tg { --brand: #26A5E4; }
+:root[data-theme="dark"] .si--x { --brand: #fff; }
+.sharemenu__item:hover .si,
+.chapshare__btn:hover .si { color: var(--brand, var(--accent)); }
+
+/* end-of-chapter share block */
+.chapshare {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  max-width: var(--measure); margin: 2.6rem 0 0; padding: 1rem 1.15rem;
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.chapshare__label {
+  font-family: var(--font-mono); font-size: .7rem; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-3); margin-right: auto;
+}
+.chapshare__row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.chapshare__btn {
+  position: relative;
+  width: 34px; height: 34px; display: grid; place-items: center; padding: 0;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface);
+  cursor: pointer; text-decoration: none; transition: border-color .15s var(--ease);
+}
+.chapshare__btn:hover { border-color: var(--accent); }
+.chapshare__btn.is-done { border-color: var(--accent); }
+.chapshare__btn.is-done .si { color: var(--accent); }
+/* on-brand tooltip: platform name on hover/focus */
+.chapshare__btn::after {
+  content: attr(data-tip);
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  background: var(--text); color: var(--bg);
+  font-family: var(--font-mono); font-size: .6rem; letter-spacing: .02em; white-space: nowrap;
+  padding: .25rem .45rem; border-radius: 4px; opacity: 0; pointer-events: none;
+  transition: opacity .12s var(--ease); z-index: 5;
+}
+.chapshare__btn:hover::after, .chapshare__btn:focus-visible::after { opacity: 1; }
 
 /* ----------------------------------------------------------------------------
    12. RESPONSIVE

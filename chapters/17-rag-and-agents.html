@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 17 · RAG, Tools &amp; Agents — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="RAG, Tools &amp; Agents — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Giving models memory, tools, and the ability to act.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/17-rag-and-agents.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="RAG, Tools &amp; Agents — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Giving models memory, tools, and the ability to act.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="How to give LLMs access to your data: retrieval-augmented generation, embedding models, vector databases, function calling, structured outputs, and autonomous agents.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 17 · Part VI — Putting it to Work</div>
           <h1>RAG, Tools &amp; Agents</h1>
-          <p class="standfirst">A model trained last year doesn't know about your internal docs, your database, or what happened this morning. RAG and tool use are how you give it access — without retraining. Understanding how they actually work turns you from a prompt engineer into an LLM systems engineer.</p>
+          <p class="standfirst">A model trained last year doesn't know about your internal docs, your database, or what happened this morning. RAG and tool use are how you give it access, without retraining. Understanding how they actually work turns you from a prompt engineer into an LLM systems engineer.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 20 min</span>
             <span><b>Prereqs</b> · Plates 04, 06, 09</span>
@@ -55,7 +67,7 @@
         </p>
         <ul>
           <li><strong>RAG</strong> (<span class="gloss" data-term="rag">Retrieval-Augmented Generation</span>)<a class="cite" data-ref="lewis2020"></a>: retrieve relevant text and paste it into the context before asking the model to answer. Give it the reference manual instead of teaching it the content.</li>
-          <li><strong>Tool use / function calling</strong>: let the model emit a structured request to call an external function (search API, calculator, database query) and receive the result — turning the model into an orchestrator.</li>
+          <li><strong>Tool use / function calling</strong>: let the model emit a structured request to call an external function (search API, calculator, database query) and receive the result, turning the model into an orchestrator.</li>
         </ul>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · open-book exam vs. delegation</div>
@@ -120,10 +132,10 @@
 
         <h2 id="embeddings">Embedding models: the semantic compass</h2>
         <p>
-          An <span class="gloss" data-term="embedding-model">embedding model</span> maps a piece of text to a dense vector — a point in a high-dimensional space where <em>similar meaning ≈ nearby points</em>. The embedding model is separate from (and usually much smaller than) your generative LLM.
+          An <span class="gloss" data-term="embedding-model">embedding model</span> maps a piece of text to a dense vector: a point in a high-dimensional space where <em>similar meaning ≈ nearby points</em>. The embedding model is separate from (and usually much smaller than) your generative LLM.
         </p>
         <p>
-          Popular choices: <code>text-embedding-3-small</code> (OpenAI API, 1536 dims), <code>all-MiniLM-L6-v2</code> (fast, 384 dims, runs locally), <code>BAAI/bge-m3</code> (multilingual, 1024 dims, very strong). For production, run the same model family for both indexing and querying — mixing models gives gibberish similarity scores.
+          Popular choices: <code>text-embedding-3-small</code> (OpenAI API, 1536 dims), <code>all-MiniLM-L6-v2</code> (fast, 384 dims, runs locally), <code>BAAI/bge-m3</code> (multilingual, 1024 dims, very strong). For production, run the same model family for both indexing and querying; mixing models gives gibberish similarity scores.
         </p>
 
         <div class="codeblock" data-tabs>
@@ -317,12 +329,12 @@ The current weather in Tokyo is 22°C and sunny.</code></pre>
 
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>Tool use is essentially <strong>RPC over text</strong>. The model generates a structured call; you dispatch it via your normal code; you serialize the response back. The "agentic loop" is just a while loop: keep calling the model until it's done emitting tool calls. The model is a stateless function — all state lives in the <code>messages</code> array you maintain.</p>
+          <p>Tool use is essentially <strong>RPC over text</strong>. The model generates a structured call; you dispatch it via your normal code; you serialize the response back. The "agentic loop" is just a while loop: keep calling the model until it's done emitting tool calls. The model is a stateless function; all state lives in the <code>messages</code> array you maintain.</p>
         </div>
 
         <h2 id="structured-outputs">Structured outputs with Pydantic</h2>
         <p>
-          Sometimes you don't want free text at all — you want JSON that matches a schema. <span class="gloss" data-term="pydantic">Pydantic</span> is the standard tool for this in the Python LLM ecosystem: define your schema as a Pydantic model, generate its JSON Schema, pass it to the model, validate the response.
+          Sometimes you don't want free text at all. You want JSON that matches a schema. <span class="gloss" data-term="pydantic">Pydantic</span> is the standard tool for this in the Python LLM ecosystem: define your schema as a Pydantic model, generate its JSON Schema, pass it to the model, validate the response.
         </p>
 
         <div class="codeblock">
@@ -369,12 +381,12 @@ Components: ['PaymentService', 'checkout API']
 
         <div class="callout callout--gotcha">
           <div class="callout__tag">Gotcha · constrained decoding vs. prompt-only</div>
-          <p>Asking a model nicely to "output valid JSON" works most of the time. But for production systems, use constrained decoding (grammar-based token masking) via tools like <code>outlines</code>, <code>guidance</code>, or the <code>response_format={"type": "json_object"}</code> flag on OpenAI — these guarantee syntactically valid output by construction, not by luck.</p>
+          <p>Asking a model nicely to "output valid JSON" works most of the time. But for production systems, use constrained decoding (grammar-based token masking) via tools like <code>outlines</code>, <code>guidance</code>, or the <code>response_format={"type": "json_object"}</code> flag on OpenAI; these guarantee syntactically valid output by construction, not by luck.</p>
         </div>
 
         <h2 id="agents">Agents: loops, memory, planning</h2>
         <p>
-          An <span class="gloss" data-term="agents">agent</span> is a model in a loop with tools. Rather than a single prompt → response, the agent gets a goal, plans steps, calls tools, observes results, revises its plan, and iterates — all autonomously, until it decides it's done (or hits a step limit).
+          An <span class="gloss" data-term="agents">agent</span> is a model in a loop with tools. Rather than a single prompt → response, the agent gets a goal, plans steps, calls tools, observes results, revises its plan, and iterates, all autonomously, until it decides it's done (or hits a step limit).
         </p>
         <p>
           The minimal agent loop looks like this:
@@ -463,7 +475,7 @@ for step in range(10):   # safety limit
           <li><strong>Embedding models</strong> map text to dense vectors where semantic similarity = geometric proximity. Always use the same model for indexing and querying.</li>
           <li><strong>Function calling / tool use</strong> lets the model emit structured JSON calls that your code executes. The model is the planner; you are the runtime. The "agentic loop" is just a while loop over model calls.</li>
           <li><strong>Pydantic</strong> + JSON Schema is the standard way to get validated structured output from LLMs. For production, prefer constrained decoding over prompt-only approaches.</li>
-          <li><strong>Agents</strong> = model + tools + loop. They fail in predictable ways — always add step limits, log all tool calls, validate outputs.</li>
+          <li><strong>Agents</strong> = model + tools + loop. They fail in predictable ways: always add step limits, log all tool calls, validate outputs.</li>
         </ul>
       </article>
 

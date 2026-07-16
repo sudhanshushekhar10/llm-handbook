@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 15 · Beyond the Vanilla Transformer — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Beyond the Vanilla Transformer — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Mixture-of-Experts, GQA, long context, and state-space models.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/15-advanced-architectures.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Beyond the Vanilla Transformer — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Mixture-of-Experts, GQA, long context, and state-space models.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Mixture-of-Experts, Grouped Query Attention, long-context RoPE scaling, and the rise of State Space Models: the architectural innovations that define modern LLMs.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 15 · Part VI — Advanced Architectures</div>
           <h1>Beyond the Vanilla Transformer</h1>
-          <p class="standfirst">The 2017 Transformer was a brilliant blueprint, but it came with expensive defaults: every token attends to every other token, every parameter activates for every input. Modern architectures surgically fix these bottlenecks — and understanding the fixes tells you a lot about where the field is going.</p>
+          <p class="standfirst">The 2017 Transformer was a brilliant blueprint, but it came with expensive defaults: every token attends to every other token, every parameter activates for every input. Modern architectures surgically fix these bottlenecks, and understanding the fixes tells you a lot about where the field is going.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 18 min</span>
             <span><b>Prereqs</b> · Plates 05, 13, 14</span>
@@ -54,11 +66,11 @@
           The 2017 "Attention is All You Need"<a class="cite" data-ref="vaswani2017"></a> architecture made two choices that looked fine at 65M parameters but become brutal at 70B:
         </p>
         <ul>
-          <li><strong>Full attention</strong>: every query attends to every key. Cost is <em>O(n²)</em> in sequence length — double the context, quadruple the memory and compute.</li>
+          <li><strong>Full attention</strong>: every query attends to every key. Cost is <em>O(n²)</em> in sequence length: double the context, quadruple the memory and compute.</li>
           <li><strong>Dense feed-forward</strong>: all parameters fire for every token. You're paying for a 70B-parameter model on every single token, even when most of those parameters are irrelevant to the current input.</li>
         </ul>
         <p>
-          Modern architectures attack each problem separately. The result is a family of models that are faster, cheaper, longer-range, and in some cases genuinely smarter — while still being Transformer-based at heart. Let's walk through the big ideas.
+          Modern architectures attack each problem separately. The result is a family of models that are faster, cheaper, longer-range, and in some cases genuinely smarter, while still being Transformer-based at heart. Let's walk through the big ideas.
         </p>
 
         <h2 id="gqa-mqa">Grouped Query Attention: fewer KV heads, same quality</h2>
@@ -66,7 +78,7 @@
           Recall from Plate 05 that multi-head <span class="gloss" data-term="attention">attention</span> runs <em>h</em> independent attention heads. In standard MHA, each head has its own Q, K, V projection. The <span class="gloss" data-term="kv-cache">KV cache</span> stores one K and V tensor per head, per layer, per token in the sequence. At 32 heads and a 128K context, that's enormous.
         </p>
         <p>
-          <strong>Multi-Query Attention (MQA)</strong> — proposed in the Shazeer 2019 fast decoding paper<a class="cite" data-ref="shazeer2017"></a> — uses one shared K and one shared V across all query heads. Memory shrinks by <em>h×</em>, decode is fast, but quality can slip on subtle tasks. <strong>Grouped Query Attention (GQA)</strong><a class="cite" data-ref="ainslie2023"></a> splits the difference: group the <em>h</em> query heads into <em>g</em> groups, one K/V pair per group.
+          <strong>Multi-Query Attention (MQA)</strong> (proposed in the Shazeer 2019 fast decoding paper<a class="cite" data-ref="shazeer2017"></a>) uses one shared K and one shared V across all query heads. Memory shrinks by <em>h×</em>, decode is fast, but quality can slip on subtle tasks. <strong>Grouped Query Attention (GQA)</strong><a class="cite" data-ref="ainslie2023"></a> splits the difference: group the <em>h</em> query heads into <em>g</em> groups, one K/V pair per group.
         </p>
 
         <figure class="diagram">
@@ -129,24 +141,24 @@
 
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV</div>
-          <p>Think of GQA as <strong>connection pooling for attention</strong>. Each "query connection" doesn't need its own dedicated K/V socket — multiple queries share the same cached K/V pair. The KV cache is the bottleneck resource at long contexts, and GQA is the pooling layer that lets you serve more queries from the same memory budget.</p>
+          <p>Think of GQA as <strong>connection pooling for attention</strong>. Each "query connection" doesn't need its own dedicated K/V socket; multiple queries share the same cached K/V pair. The KV cache is the bottleneck resource at long contexts, and GQA is the pooling layer that lets you serve more queries from the same memory budget.</p>
         </div>
 
         <div class="callout callout--win">
-          <div class="callout__tag">What won — and why</div>
+          <div class="callout__tag">What won, and why</div>
           <p>GQA is now the default in Llama 3, Mistral, Gemma, Phi-3, and most production models released since 2023. It shrinks KV cache memory by 4–8× with minimal quality loss on standard benchmarks. MQA was too aggressive; MHA is too expensive. GQA found the sweet spot.</p>
         </div>
 
         <h2 id="rope">RoPE: rotary embeddings and long context</h2>
         <p>
-          How does a model know token position? The vanilla Transformer used learned <span class="gloss" data-term="positional-encoding">positional encoding</span> — add a fixed vector to each token embedding before the first layer. It worked, but it was hard to extrapolate to lengths not seen during training.
+          How does a model know token position? The vanilla Transformer used learned <span class="gloss" data-term="positional-encoding">positional encoding</span>: add a fixed vector to each token embedding before the first layer. It worked, but it was hard to extrapolate to lengths not seen during training.
         </p>
         <p>
           <strong>Rotary Position Embedding (RoPE)</strong><a class="cite" data-ref="su2021"></a> rotates the Q and K vectors by an angle proportional to position <em>before</em> the dot product. The rotation is applied in pairs of dimensions; when you take the dot product Q·K, the result depends only on the <em>relative</em> distance between the two positions. No absolute position is ever explicitly encoded.
         </p>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · phase angles in signal processing</div>
-          <p>Imagine two radio signals. Their frequencies encode where they are in time; when you correlate two signals, you get a phase difference that tells you how far apart they were — not where each started. RoPE is the same idea: the "frequency" encodes absolute position, the dot product measures relative offset. This is why RoPE generalises to unseen context lengths more gracefully than additive positional encoding.</p>
+          <p>Imagine two radio signals. Their frequencies encode where they are in time; when you correlate two signals, you get a phase difference that tells you how far apart they were, not where each started. RoPE is the same idea: the "frequency" encodes absolute position, the dot product measures relative offset. This is why RoPE generalises to unseen context lengths more gracefully than additive positional encoding.</p>
         </div>
         <p>
           To push beyond training context lengths, labs use <strong>RoPE scaling</strong>: divide all the rotation frequencies by a constant factor (linear scaling) or use more sophisticated non-linear schemes (YaRN, NTK-aware interpolation). Llama 3.1's 128K context window was achieved via a YaRN-like extension on top of RoPE trained at 8K.
@@ -154,7 +166,7 @@
 
         <h2 id="moe">Mixture of Experts: sparse parameters</h2>
         <p>
-          The feed-forward layer is where most Transformer parameters live. In a standard model, every token passes through every FFN parameter — dense and expensive. <span class="gloss" data-term="moe">Mixture of Experts (MoE)</span><a class="cite" data-ref="fedus2021"></a> replaces the single FFN with <em>N</em> expert networks and a router.
+          The feed-forward layer is where most Transformer parameters live. In a standard model, every token passes through every FFN parameter: dense and expensive. <span class="gloss" data-term="moe">Mixture of Experts (MoE)</span><a class="cite" data-ref="fedus2021"></a> replaces the single FFN with <em>N</em> expert networks and a router.
         </p>
         <p>
           The router is a small linear layer that scores each expert for the current token, then selects the top-<em>k</em> (usually 2–4 out of 8–64). Only those experts compute; the rest sleep. The model has the <em>capacity</em> of a large dense model but the <em>compute cost</em> of a much smaller one.
@@ -164,7 +176,7 @@
           <div class="callout__tag">Key paper</div>
           <div class="ref-card"><span class="yr">2021</span>
             <div><cite>Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity</cite>
-              <span class="auth">Fedus, Zoph, Shazeer — Google Brain</span>
+              <span class="auth">Fedus, Zoph, Shazeer (Google Brain)</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">Demonstrated that routing to a single expert per token (top-1) scales cleanly to trillion-parameter models with constant compute. Spawned the modern MoE wave. <a href="../references.html#ref-21">See reference [21] →</a></p>
             </div>
           </div>
@@ -177,7 +189,7 @@
 
         <div class="callout callout--gotcha">
           <div class="callout__tag">Gotcha · "8×7B" doesn't mean 56B active parameters</div>
-          <p>Mixtral 8×7B has ~47B total parameters (routed FFNs + shared attention). Each token activates ~2 experts, so the active parameter count during a forward pass is roughly 12–13B — similar to a dense 13B model's compute cost. The "47B" model runs more like a 12B model in practice. Don't confuse total parameters with activated parameters in MoE.</p>
+          <p>Mixtral 8×7B has ~47B total parameters (routed FFNs + shared attention). Each token activates ~2 experts, so the active parameter count during a forward pass is roughly 12–13B, similar to a dense 13B model's compute cost. The "47B" model runs more like a 12B model in practice. Don't confuse total parameters with activated parameters in MoE.</p>
         </div>
 
         <h2 id="moe-serving">MoE in practice: loading all experts</h2>
@@ -227,23 +239,23 @@ print(tok.decode(out[0], skip_special_tokens=True))</code></pre></div>
           All the architectures above are still attention-based. But there's a fundamentally different approach growing in popularity: <strong>State Space Models (SSMs)</strong>, with <strong>Mamba</strong><a class="cite" data-ref="gu2023"></a> as the flagship.
         </p>
         <p>
-          SSMs replace attention with a recurrence over a compressed hidden state. Each token updates a fixed-size state vector instead of attending over all previous tokens. The key insight in Mamba is making the state transition parameters <em>input-dependent</em> (selective SSM) — the model learns which information to keep and which to forget, rather than using a fixed filter.
+          SSMs replace attention with a recurrence over a compressed hidden state. Each token updates a fixed-size state vector instead of attending over all previous tokens. The key insight in Mamba is making the state transition parameters <em>input-dependent</em> (selective SSM): the model learns which information to keep and which to forget, rather than using a fixed filter.
         </p>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · stream vs. replay buffer</div>
-          <p>Attention is like a replay buffer — you store every past frame and can look back at any of them. The cost grows as the buffer fills. An SSM is more like a running stream consumer: you process each item and update a compact summary. The cost is constant per token regardless of context length. The trade-off: you can't look back at a specific frame — only query the current summary. For tasks requiring precise retrieval (exact quotes, long-range references), attention wins. For smooth, streaming tasks, SSMs are very fast.</p>
+          <p>Attention is like a replay buffer: you store every past frame and can look back at any of them. The cost grows as the buffer fills. An SSM is more like a running stream consumer: you process each item and update a compact summary. The cost is constant per token regardless of context length. The trade-off: you can't look back at a specific frame, only query the current summary. For tasks requiring precise retrieval (exact quotes, long-range references), attention wins. For smooth, streaming tasks, SSMs are very fast.</p>
         </div>
 
         <div class="callout callout--fail">
           <div class="callout__tag">What hasn't worked yet</div>
-          <p>Pure SSM models like early Mamba versions struggle on tasks that require precise recall of information from far back in the context — the type of thing attention handles trivially via direct lookup. Hybrid architectures (alternating SSM and attention layers) like Mamba-2 and Jamba try to get the best of both worlds, and this is active research territory. The jury is still out on whether SSMs can fully replace attention at scale.</p>
+          <p>Pure SSM models like early Mamba versions struggle on tasks that require precise recall of information from far back in the context: the type of thing attention handles trivially via direct lookup. Hybrid architectures (alternating SSM and attention layers) like Mamba-2 and Jamba try to get the best of both worlds, and this is active research territory. The jury is still out on whether SSMs can fully replace attention at scale.</p>
         </div>
 
         <div class="callout callout--paper">
           <div class="callout__tag">Key paper</div>
           <div class="ref-card"><span class="yr">2023</span>
             <div><cite>Mamba: Linear-Time Sequence Modeling with Selective State Spaces</cite>
-              <span class="auth">Gu &amp; Dao — Carnegie Mellon / Princeton</span>
+              <span class="auth">Gu &amp; Dao, Carnegie Mellon / Princeton</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">Demonstrated that a selective SSM could match Transformer quality on language modelling while scaling linearly (not quadratically) with sequence length. The most credible Transformer challenger to date. <a href="../references.html#ref-43">See reference [43] →</a></p>
             </div>
           </div>
@@ -269,17 +281,17 @@ print(tok.decode(out[0], skip_special_tokens=True))</code></pre></div>
           <summary>▸ How RoPE rotation works mathematically <span class="tag">deep dive</span></summary>
           <div>
             <p>RoPE applies a rotation matrix R(θ) to each pair of dimensions of Q and K, where θ = position × base_freq^(−2i/d) and i is the dimension index. This is exactly the encoding used in sinusoidal positional encoding, but applied via rotation rather than addition.</p>
-            <p>The dot product Q·K then computes: (R(m)q)·(R(n)k) = q·R(n−m)k, which depends only on the relative distance (n−m). This "relative position by construction" property is why RoPE generalizes better — you're never asking the model to recognize absolute positions it hasn't seen; it always sees relative distances which are learnable regardless of context length.</p>
+            <p>The dot product Q·K then computes: (R(m)q)·(R(n)k) = q·R(n−m)k, which depends only on the relative distance (n−m). This "relative position by construction" property is why RoPE generalizes better: you're never asking the model to recognize absolute positions it hasn't seen; it always sees relative distances which are learnable regardless of context length.</p>
             <p>Long-context extensions (YaRN, NTK) work by rescaling the base frequency from the default 10,000 to a much higher value (e.g., 500,000), which stretches the rotation cycles so that the angular difference between positions that are far apart is still distinguishable.</p>
           </div>
         </details>
 
         <h2 id="recap">Recap</h2>
         <ul>
-          <li><strong>GQA</strong> groups query heads to share fewer K/V projections — shrinks the KV cache 4–8× with minimal quality loss. Now standard in every major model family.</li>
+          <li><strong>GQA</strong> groups query heads to share fewer K/V projections: shrinks the KV cache 4–8× with minimal quality loss. Now standard in every major model family.</li>
           <li><strong>RoPE</strong> encodes relative position via rotation; extrapolates to unseen context lengths better than additive schemes. Long-context extensions (YaRN, NTK) push to 128K+ tokens.</li>
-          <li><strong>MoE</strong> replaces the dense FFN with <em>N</em> expert networks and a learned router — massive parameter count, small per-token compute. The "47B" Mixtral runs like a 12B model.</li>
-          <li><strong>SSMs (Mamba)</strong> replace attention with a selective linear recurrence — O(n) cost vs O(n²), but weaker on precise long-range recall. Hybrid models are the current frontier.</li>
+          <li><strong>MoE</strong> replaces the dense FFN with <em>N</em> expert networks and a learned router: massive parameter count, small per-token compute. The "47B" Mixtral runs like a 12B model.</li>
+          <li><strong>SSMs (Mamba)</strong> replace attention with a selective linear recurrence, O(n) cost vs O(n²), but weaker on precise long-range recall. Hybrid models are the current frontier.</li>
           <li>For production today: dense GQA + RoPE is the safe default; MoE if you need scale on a budget; SSMs worth watching.</li>
         </ul>
       </article>

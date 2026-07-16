@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 08 · The Training Loop in Practice — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="The Training Loop in Practice — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="AdamW, schedules, mixed precision, and training across many GPUs.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/08-training-loop.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Training Loop in Practice — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="AdamW, schedules, mixed precision, and training across many GPUs.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="The optimizer, learning-rate schedule, mixed precision, gradient accumulation, and distributed training — data parallelism, tensor parallelism, FSDP, and ZeRO — explained for engineers who already know sharding.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 08 · Part III — Training</div>
           <h1>The Training Loop in Practice</h1>
-          <p class="standfirst">The training loop is a distributed systems problem in disguise. Forward pass, backward pass, optimizer step — that's four lines of PyTorch. But fitting it on a single GPU is a memory-engineering challenge, and scaling to hundreds of GPUs is a full-blown sharding problem with all the complexity that implies.</p>
+          <p class="standfirst">The training loop is a distributed systems problem in disguise. Forward pass, backward pass, optimizer step: that's four lines of PyTorch. But fitting it on a single GPU is a memory-engineering challenge, and scaling to hundreds of GPUs is a full-blown sharding problem with all the complexity that implies.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 22 min</span>
             <span><b>Prereqs</b> · Plate 07</span>
@@ -52,7 +64,7 @@
         <h2 id="five-lines">The training loop in five lines</h2>
         <p>
           Strip away all the engineering and the core training loop is surprisingly compact. Every
-          gradient-based ML training framework — PyTorch, JAX, you name it — implements this same
+          gradient-based ML training framework (PyTorch, JAX, you name it) implements this same
           cycle:
         </p>
 
@@ -153,7 +165,7 @@ step   9  loss=7.9103   lr=2.91e-04
 
         <h2 id="optimizers">Optimizers and learning-rate schedules</h2>
         <p>
-          Nearly every LLM is trained with <strong>AdamW</strong> — Adam with weight decay decoupled
+          Nearly every LLM is trained with <strong>AdamW</strong>: Adam with weight decay decoupled
           from the gradient update<a class="cite" data-ref="kaplan2020"></a>. Recall from Plate 07
           that Adam is expensive: per parameter, it stores two moment buffers (<em>m</em>, the
           first moment / exponential moving average of gradients, and <em>v</em>, the second moment
@@ -164,7 +176,7 @@ step   9  loss=7.9103   lr=2.91e-04
         </p>
         <p>
           The <span class="gloss" data-term="learning-rate">learning rate</span> is the most
-          consequential hyperparameter in training — more than batch size, dropout, or most architectural
+          consequential hyperparameter in training, more than batch size, dropout, or most architectural
           choices. The standard schedule has two phases:
         </p>
         <ul>
@@ -182,10 +194,10 @@ step   9  loss=7.9103   lr=2.91e-04
           <div class="callout__tag">Gotcha · the learning rate is the most sensitive knob</div>
           <p>Too high: loss spikes or diverges, gradients explode, the model never converges.
           Too low: training is unnecessarily slow; you waste compute. The sweet spot is empirically
-          derived — most modern runs use a <strong>peak LR of 1e-4 to 3e-4</strong> for 7B-scale
+          derived; most modern runs use a <strong>peak LR of 1e-4 to 3e-4</strong> for 7B-scale
           models, often found by running a short LR sweep at 1% of the full run budget. Don't copy
           hyperparameters from a paper without checking whether the model size and batch size match
-          yours — the optimal LR scales with both.</p>
+          yours; the optimal LR scales with both.</p>
         </div>
 
         <h2 id="memory">Fitting it in memory: mixed precision, grad accumulation, checkpointing</h2>
@@ -212,7 +224,7 @@ step   9  loss=7.9103   lr=2.91e-04
         </div>
 
         <p><strong><span class="gloss" data-term="gradient-accumulation">Gradient accumulation.</span></strong>
-          Large batch sizes reduce gradient noise and improve training stability — but doubling the
+          Large batch sizes reduce gradient noise and improve training stability, but doubling the
           batch size doubles activation memory. Gradient accumulation simulates a large batch by
           running multiple small forward-backward passes without calling <code>optimizer.step()</code>,
           then summing the gradients before the update. With accumulation steps = 8, you get the
@@ -222,8 +234,8 @@ step   9  loss=7.9103   lr=2.91e-04
         <p><strong>Gradient clipping.</strong> Cap gradient norms at a threshold (typically 1.0).
           When a batch contains anomalous text, the loss spikes, gradients explode, and without clipping
           the optimizer takes a huge wild step that can take hours of training to recover from.
-          Clipping is a cheap guard against catastrophic steps. Monitor the gradient norm over training —
-          if it's consistently hitting the clip threshold, your LR may be too high.</p>
+          Clipping is a cheap guard against catastrophic steps. Monitor the gradient norm over training.
+          If it's consistently hitting the clip threshold, your LR may be too high.</p>
 
         <p><strong>Activation <span class="gloss" data-term="checkpoint">checkpointing</span>
           (gradient checkpointing).</strong> During the forward pass, intermediate activations are
@@ -245,11 +257,11 @@ step   9  loss=7.9103   lr=2.91e-04
           <p>You already know this problem. In distributed databases, you shard either the data (rows)
           or the schema (columns/tables) across nodes. In distributed training, you shard either the
           <strong>data</strong> (different batches per GPU), the <strong>model's layers</strong>
-          (different layers per GPU — pipeline parallelism), or the <strong>tensors within a layer</strong>
-          (split weight matrices across GPUs — tensor parallelism). The collective communication
+          (different layers per GPU: pipeline parallelism), or the <strong>tensors within a layer</strong>
+          (split weight matrices across GPUs: tensor parallelism). The collective communication
           primitives (all-reduce, all-gather, scatter) are exactly the reduce/broadcast operations
           you'd see in a map-reduce pipeline. ZeRO is the optimizer-state equivalent of a sharded
-          database — which we'll get to next.</p>
+          database, which we'll get to next.</p>
         </div>
 
         <p><strong>Data parallelism (DP).</strong> The simplest strategy: each GPU holds a full copy
@@ -267,7 +279,7 @@ step   9  loss=7.9103   lr=2.91e-04
           nodes over InfiniBand: painful.</p>
 
         <p><strong>Pipeline parallelism (PP).</strong> Assign sequential layer groups to different
-          GPUs — GPU 0 handles layers 0–7, GPU 1 layers 8–15, and so on. Input flows through the
+          GPUs: GPU 0 handles layers 0–7, GPU 1 layers 8–15, and so on. Input flows through the
           pipeline stage by stage. Requires micro-batching to keep all stages busy (otherwise GPUs
           stall waiting for the next batch). PP has low communication volume (just layer-boundary
           activations) but introduces "pipeline bubbles" where GPUs idle at the start and end of
@@ -275,7 +287,7 @@ step   9  loss=7.9103   lr=2.91e-04
 
         <p>Real large-scale runs combine all three: 3D parallelism. A 1,000-GPU run might use
           TP = 8 (within-node), PP = 8 (cross-node), and DP = 16 (data replicas). Coordinating this
-          is a significant infrastructure problem — one reason large-scale training is hard to replicate.</p>
+          is a significant infrastructure problem, one reason large-scale training is hard to replicate.</p>
 
         <h2 id="fsdp-zero">FSDP and ZeRO: sharding the model itself</h2>
         <p>
@@ -283,7 +295,7 @@ step   9  loss=7.9103   lr=2.91e-04
           <strong><span class="gloss" data-term="fsdp">FSDP</span></strong> (Fully Sharded Data
           Parallel, PyTorch native) or <strong>DeepSpeed ZeRO</strong> (Zero Redundancy Optimizer).
           Both implement the same core insight: in standard DDP, every GPU holds a full copy of the
-          model, gradients, and optimizer state — with N GPUs, that's N × the total memory cost.
+          model, gradients, and optimizer state; with N GPUs, that's N × the total memory cost.
           Why replicate? Shard it.
         </p>
         <p>
@@ -297,16 +309,16 @@ step   9  loss=7.9103   lr=2.91e-04
           <li><strong>Stage 3 / FSDP:</strong> also shard the parameters themselves. During the
             forward and backward passes, each layer's weights are all-gathered from the shards as needed,
             then freed. The communication overhead is one all-gather per layer per forward and one
-            reduce-scatter per backward — but peak memory drops to 1/N of the total model state.</li>
+            reduce-scatter per backward, but peak memory drops to 1/N of the total model state.</li>
         </ul>
 
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV · ZeRO = sharding the optimizer-state database</div>
           <p>Think of the AdamW optimizer state as a <strong>key-value store</strong> where the key is
           "parameter index" and the value is (weight, first moment, second moment). DDP replicates
-          this database on every GPU — a wasteful full copy. ZeRO applies horizontal sharding:
+          this database on every GPU, a wasteful full copy. ZeRO applies horizontal sharding:
           each GPU owns a range of parameter indices and holds only those rows. During the optimizer
-          step, each GPU updates its shard locally — no cross-GPU communication for the update itself.
+          step, each GPU updates its shard locally: no cross-GPU communication for the update itself.
           The all-gather before the forward pass is the equivalent of a distributed join: assemble
           the full parameter tensor from its shards. It's map-reduce for the optimizer.</p>
         </div>
@@ -354,12 +366,12 @@ accelerate launch --config_file fsdp_config.yaml train.py
 
         <h2 id="monitoring">Monitoring a run</h2>
         <p>
-          A pretraining run lasting weeks is a long-running stateful process — exactly the kind of thing
+          A pretraining run lasting weeks is a long-running stateful process, exactly the kind of thing
           engineers instrument obsessively in production systems. The same instincts apply here:
         </p>
         <ul>
           <li><strong>Training loss curve.</strong> Should decrease smoothly. A spike followed by recovery
-            usually indicates a bad data batch. A spike with no recovery is a divergence — abort,
+            usually indicates a bad data batch. A spike with no recovery is a divergence: abort,
             restore last <span class="gloss" data-term="checkpoint">checkpoint</span>, and investigate
             before restarting (usually a LR too high or an inf/NaN in the data).</li>
           <li><strong>Gradient norm.</strong> Log the gradient norm every step. Should be roughly stable
@@ -370,7 +382,7 @@ accelerate launch --config_file fsdp_config.yaml train.py
             a data pipeline bottleneck (CPU data loading is starving the GPU), suboptimal kernel fusion,
             or excessive communication overhead in the distributed setup.</li>
           <li><strong>Validation loss.</strong> Evaluate on a held-out slice every N steps. If training
-            loss drops but validation loss stagnates or rises, you're overfitting — either reduce the
+            loss drops but validation loss stagnates or rises, you're overfitting: either reduce the
             number of epochs or add regularization. For large pretraining runs you typically see only one
             epoch over the data, so overfitting is rare; contamination is a bigger concern.</li>
           <li><strong>Checkpoint cadence.</strong> Save a full <span class="gloss" data-term="checkpoint">checkpoint</span>
@@ -386,10 +398,10 @@ accelerate launch --config_file fsdp_config.yaml train.py
           (2) batch size too large → reduce, or use gradient accumulation; (3) optimizer state not sharded
           → switch to FSDP or DeepSpeed ZeRO-2; (4) <span class="gloss" data-term="mixed-precision">mixed precision</span>
           not enabled → switch to bf16; (5) <span class="gloss" data-term="kv-cache">KV cache</span> being
-          allocated unnecessarily during training (it's for inference only — make sure
+          allocated unnecessarily during training (it's for inference only; make sure
           <code>use_cache=False</code> is set in the model config for training). Profile with
           <code>torch.cuda.memory_summary()</code> and PyTorch's memory snapshot tool before reaching
-          for more GPUs — you might be leaving 20 GB on the table.</p>
+          for more GPUs. You might be leaving 20 GB on the table.</p>
         </div>
 
         <details class="deep">
@@ -409,7 +421,7 @@ accelerate launch --config_file fsdp_config.yaml train.py
             </table></div>
             <p>7B × 18 bytes ≈ <strong>126 GB</strong> before activations. On 4 × A100 80 GB GPUs (320 GB
             aggregate) with FSDP Stage 3, each GPU holds 126 / 4 ≈ 31.5 GB of model state, leaving
-            ~48 GB per GPU for activations — enough for reasonable context lengths and batch sizes.
+            ~48 GB per GPU for activations, enough for reasonable context lengths and batch sizes.
             This is the back-of-envelope calculation to size your GPU cluster before starting a run.</p>
           </div>
         </details>
@@ -421,10 +433,10 @@ accelerate launch --config_file fsdp_config.yaml train.py
           <li>The <strong>learning rate</strong> is the most sensitive hyperparameter. Use linear warmup followed by cosine decay; tune peak LR carefully.</li>
           <li><strong>Mixed precision (bf16)</strong> halves activation memory and doubles compute speed. <strong>Gradient accumulation</strong> simulates large batches without extra memory. <strong>Gradient checkpointing</strong> trades 33% compute for large activation memory savings.</li>
           <li><strong>Data parallelism</strong> replicates the model across GPUs, syncing gradients via all-reduce. <strong>Tensor parallelism</strong> splits matrices within a layer. <strong>Pipeline parallelism</strong> splits layers across GPUs.</li>
-          <li><strong>FSDP / ZeRO</strong> shard the model weights, gradients, and optimizer state across GPUs — think of it as horizontally sharding the optimizer-state key-value store. Stage 3 reduces per-GPU memory by ~N× for N GPUs.</li>
+          <li><strong>FSDP / ZeRO</strong> shard the model weights, gradients, and optimizer state across GPUs; think of it as horizontally sharding the optimizer-state key-value store. Stage 3 reduces per-GPU memory by ~N× for N GPUs.</li>
           <li>Monitor: training loss smoothness, gradient norm stability, MFU (&gt;40% is healthy), validation loss, and checkpoint cadence.</li>
         </ul>
-        <p>Plate 09 covers what comes after pretraining: supervised fine-tuning (SFT) and instruction tuning — the steps that turn a raw base model into an assistant that follows your prompts.</p>
+        <p>Plate 09 covers what comes after pretraining: supervised fine-tuning (SFT) and instruction tuning: the steps that turn a raw base model into an assistant that follows your prompts.</p>
       </article>
 
       <nav class="pager" id="pager"></nav>

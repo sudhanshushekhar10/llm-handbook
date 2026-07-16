@@ -291,6 +291,8 @@
     renderGlossaryPage();
     renderReferencesPage();
     if (H.renderByline) H.renderByline();
+    if (H.renderShare) H.renderShare();
+    if (H.renderChapterShare) H.renderChapterShare(PAGE.slug);
     if (H.renderFooter) H.renderFooter();
   });
 

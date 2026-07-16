@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 11 · Alignment: RLHF &amp; DPO — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Alignment: RLHF &amp; DPO — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Turning a raw predictor into a helpful assistant.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/11-alignment.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Alignment: RLHF &amp; DPO — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Turning a raw predictor into a helpful assistant.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="How RLHF turns a text predictor into a helpful assistant: the three-step InstructGPT recipe, reward models from human preferences, PPO with a KL leash, and DPO as the simpler successor.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 11 · Part IV — Adapting Models</div>
           <h1>Alignment: RLHF &amp; DPO</h1>
-          <p class="standfirst">A base LLM is a world-class text predictor. It is not, by default, a helpful assistant — it is equally happy predicting the next token in a suicide note as in a recipe. Alignment is the process of bending that raw prediction engine into something a human actually wants to talk to. Here's how it works, and why DPO replaced a room full of RL plumbing.</p>
+          <p class="standfirst">A base LLM is a world-class text predictor. It is not, by default, a helpful assistant; it is equally happy predicting the next token in a suicide note as in a recipe. Alignment is the process of bending that raw prediction engine into something a human actually wants to talk to. Here's how it works, and why DPO replaced a room full of RL plumbing.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 20 min</span>
             <span><b>Prereqs</b> · Plate 10</span>
@@ -52,7 +64,7 @@
         <h2 id="the-problem">The problem: a base model predicts, it doesn't assist</h2>
         <p>
           After pretraining, a language model has one objective: predict the next token. Given "The capital of France is",
-          it will produce "Paris" — but it would just as happily complete "The capital of France is… debated among scholars"
+          it will produce "Paris", but it would just as happily complete "The capital of France is… debated among scholars"
           if that pattern appeared often in its training data. It doesn't have a concept of "the right answer." It has
           a concept of "what comes next."
         </p>
@@ -76,8 +88,8 @@
             <span class="yr">2022</span>
             <div>
               <cite>Training language models to follow instructions with human feedback</cite>
-              <span class="auth">Ouyang et al. — OpenAI / NeurIPS 2022</span>
-              <p style="margin:.5rem 0 0;font-size:.92rem">The InstructGPT paper. Showed that a 1.3B model fine-tuned with RLHF was preferred by human raters over a raw 175B GPT-3 — alignment matters more than raw scale. The three-step recipe (SFT → reward model → PPO) became the industry blueprint. <a href="../references.html#ref-ouyang2022">See reference →</a></p>
+              <span class="auth">Ouyang et al., OpenAI / NeurIPS 2022</span>
+              <p style="margin:.5rem 0 0;font-size:.92rem">The InstructGPT paper. Showed that a 1.3B model fine-tuned with RLHF was preferred by human raters over a raw 175B GPT-3: alignment matters more than raw scale. The three-step recipe (SFT → reward model → PPO) became the industry blueprint. <a href="../references.html#ref-ouyang2022">See reference →</a></p>
             </div>
           </div>
         </div>
@@ -89,14 +101,14 @@
           response themselves. These (prompt, ideal response) pairs form an SFT dataset.
         </p>
         <p>
-          The SFT step does two things at once. First, it teaches the model the format and style of a helpful assistant —
+          The SFT step does two things at once. First, it teaches the model the format and style of a helpful assistant:
           concise, on-topic, structured where helpful. Second, it shifts the model's output distribution toward the space
           of "helpful responses" so that the RL stage in step 3 doesn't have to explore blindly from a totally unconstrained
           distribution. SFT gives RL a warm start.
         </p>
         <p>
           In InstructGPT, the SFT dataset was about 13,000 examples from human contractors. That's surprisingly small
-          for a 175B model — yet it was enough to dramatically shift the model's behavior. Quality of demonstrations
+          for a 175B model, yet it was enough to dramatically shift the model's behavior. Quality of demonstrations
           matters far more than quantity here.
         </p>
 
@@ -108,15 +120,15 @@
         </p>
         <p>
           The reward model is trained on comparison data. Human raters are shown a prompt and two candidate responses
-          (usually sampled from the SFT model) and asked "which is better?" The reward model — itself a language model
-          with a scalar head — is trained to assign a higher score to the preferred response and a lower score to the
+          (usually sampled from the SFT model) and asked "which is better?" The reward model (itself a language model
+          with a scalar head) is trained to assign a higher score to the preferred response and a lower score to the
           rejected one. This is a classification task in disguise: given a pair <code>(chosen, rejected)</code>, maximize
           the margin between their scores.
         </p>
 
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · a learned code-review bot</div>
-          <p>The reward model is like a code-review bot trained on thousands of pull request reviews. You don't give it a rubric — you show it thousands of (PR, human rating) pairs and let it internalize the patterns. Once trained, it can score a new PR without a human in the loop. The policy model is then trained to write code that passes this bot's review. The bot isn't perfect, but it's a useful approximation of human judgment that can be evaluated at model training speed.</p>
+          <p>The reward model is like a code-review bot trained on thousands of pull request reviews. You don't give it a rubric; you show it thousands of (PR, human rating) pairs and let it internalize the patterns. Once trained, it can score a new PR without a human in the loop. The policy model is then trained to write code that passes this bot's review. The bot isn't perfect, but it's a useful approximation of human judgment that can be evaluated at model training speed.</p>
         </div>
 
         <p>
@@ -140,7 +152,7 @@
         </p>
         <p>
           There is one critical addition: a <strong>KL penalty</strong>. Without it, the policy can drift arbitrarily far
-          from the SFT model in search of higher reward scores — and once it drifts far enough, it often discovers
+          from the SFT model in search of higher reward scores, and once it drifts far enough, it often discovers
           degenerate solutions like repeating "I'm happy to help!" in a loop (high reward model score, no actual
           helpfulness). The KL penalty adds a term to the loss that penalizes the policy for producing outputs whose
           probability under the SFT model is very different from their probability under the current policy:
@@ -157,7 +169,7 @@ reward = reward_model(prompt, response) - beta * KL(policy || sft_model)
 
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · RL on a KL leash</div>
-          <p>PPO training is like letting a dog explore a park on a leash tied to where it started (the SFT model). The dog can roam freely and sniff out high-reward spots, but the leash (KL penalty) prevents it from running so far that it loses sight of home. Without the leash, the dog (policy) will sprint toward a corner of the park that looks amazing to the reward model but is actually a garbage heap — reward hacking.</p>
+          <p>PPO training is like letting a dog explore a park on a leash tied to where it started (the SFT model). The dog can roam freely and sniff out high-reward spots, but the leash (KL penalty) prevents it from running so far that it loses sight of home. Without the leash, the dog (policy) will sprint toward a corner of the park that looks amazing to the reward model but is actually a garbage heap: reward hacking.</p>
         </div>
 
         <p>
@@ -225,10 +237,10 @@ reward = reward_model(prompt, response) - beta * KL(policy || sft_model)
           (DPO)<a class="cite" data-ref="rafailov2023"></a>, and the alignment community collectively exhaled.
         </p>
         <p>
-          The key insight: the RLHF objective — maximize reward subject to a KL constraint — has an analytical solution.
+          The key insight: the RLHF objective (maximize reward subject to a KL constraint) has an analytical solution.
           You can rearrange the math and show that the optimal policy under RLHF can be expressed directly in terms of
           a log-ratio between the policy and the reference model. This means you can train on preference pairs
-          <code>(prompt, chosen, rejected)</code> with a single classification-style loss — no reward model, no RL loop,
+          <code>(prompt, chosen, rejected)</code> with a single classification-style loss: no reward model, no RL loop,
           no four-model memory overhead.
         </p>
         <p>The DPO loss looks like this in practice:</p>
@@ -393,13 +405,13 @@ DPO training complete.
         <p>
           A practical bottleneck in RLHF is labeler cost. Writing demonstrations and comparing response pairs at scale
           requires thousands of human-hours. <span class="gloss" data-term="rlaif">RLAIF</span> (Reinforcement Learning
-          from AI Feedback)<a class="cite" data-ref="bai2022"></a> replaces the human labelers with an AI — typically a
-          stronger model — to generate the preference annotations.
+          from AI Feedback)<a class="cite" data-ref="bai2022"></a> replaces the human labelers with an AI (typically a
+          stronger model) to generate the preference annotations.
         </p>
         <p>
           Anthropic's Constitutional AI (CAI) extends this idea further. Instead of asking annotators to judge responses
-          ad hoc, you write a set of explicit principles — a "constitution" (e.g., "prefer responses that are helpful,
-          harmless, and honest") — and have the AI critique and revise its own outputs against those principles. The
+          ad hoc, you write a set of explicit principles: a "constitution" (e.g., "prefer responses that are helpful,
+          harmless, and honest"), and have the AI critique and revise its own outputs against those principles. The
           critiques become the preference data. The AI is essentially doing its own alignment via a written rulebook
           rather than a trained-from-scratch reward model.
         </p>
@@ -412,7 +424,7 @@ DPO training complete.
         <h2 id="alignment-tax">The alignment tax</h2>
         <p>
           Alignment is not free. Training a model to refuse harmful requests, stay on-topic, and produce calibrated
-          answers tends to reduce its raw capability on some benchmarks — particularly on tasks that require the model to
+          answers tends to reduce its raw capability on some benchmarks, particularly on tasks that require the model to
           "go off the rails" in a useful way (creative writing, adversarial reasoning, edge-case code generation).
         </p>
         <p>
@@ -426,7 +438,7 @@ DPO training complete.
         </ul>
         <p>
           There is no universal solution. The best-performing production models (e.g., GPT-4, Claude 3) invest enormous
-          effort in balancing alignment with capability — iterating reward models, preference datasets, and Constitutional
+          effort in balancing alignment with capability: iterating reward models, preference datasets, and Constitutional
           AI principles in tight loops. For practitioners fine-tuning open models, the practical advice is: if you fine-tune
           an already-aligned model (Llama-Instruct, Mistral-Instruct), minimize your epochs and check that alignment
           behaviors haven't degraded on a held-out safety test set.
@@ -436,16 +448,16 @@ DPO training complete.
         <ul>
           <li>A base model predicts text; alignment trains it to follow instructions and produce outputs humans prefer.</li>
           <li>The <strong>RLHF three-step pipeline</strong> (InstructGPT): SFT on demonstrations → train a reward model on human comparisons → fine-tune with PPO, penalizing KL divergence from the SFT model to prevent reward hacking.</li>
-          <li>The <strong>reward model</strong> is a language model with a scalar head, trained to rank chosen responses above rejected ones. Its quality determines the alignment quality — garbage RM → garbage alignment.</li>
+          <li>The <strong>reward model</strong> is a language model with a scalar head, trained to rank chosen responses above rejected ones. Its quality determines the alignment quality: garbage RM → garbage alignment.</li>
           <li><strong>PPO</strong> requires four models in memory simultaneously (policy, frozen SFT reference, reward model, value/critic). It works but is operationally complex.</li>
-          <li><strong>DPO</strong> reformulates the RLHF objective as a direct classification loss over preference pairs — no reward model, no RL loop, equivalent performance, far simpler. Now the standard approach for open-model alignment.</li>
+          <li><strong>DPO</strong> reformulates the RLHF objective as a direct classification loss over preference pairs: no reward model, no RL loop, equivalent performance, far simpler. Now the standard approach for open-model alignment.</li>
           <li><strong>RLAIF / Constitutional AI</strong> scale alignment feedback with AI-generated preferences, reducing dependence on expensive human annotation.</li>
           <li>The <strong>alignment tax</strong> is real: sycophancy, hedging, and capability regressions are known failure modes to watch for and test against.</li>
         </ul>
         <p>
           With alignment covered, <a href="12-data-for-finetuning.html">Plate&nbsp;12</a> zooms in on the fuel that
           powers all of these training stages: data. Format choices, chat templates, pydantic validation, synthetic
-          generation, and deduplication — the unglamorous work that actually determines whether a fine-tune succeeds.
+          generation, and deduplication: the unglamorous work that actually determines whether a fine-tune succeeds.
         </p>
       </article>
 

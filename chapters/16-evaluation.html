@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 16 · Evaluating Models — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Evaluating Models — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="Benchmarks, LLM-as-judge, contamination, and trusting your evals.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/16-evaluation.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Evaluating Models — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="Benchmarks, LLM-as-judge, contamination, and trusting your evals.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="Why evaluation is the genuinely hard part: academic benchmarks, perplexity, LLM-as-a-judge, benchmark contamination, and how to build task-specific evals you can actually trust.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 16 · Part VI — Using &amp; Contributing</div>
           <h1>Evaluating Models</h1>
-          <p class="standfirst">Building a model is mostly engineering. Knowing whether it actually works — for <em>your</em> task, in <em>your</em> environment — is the genuinely hard part. Benchmarks lie, perplexity misleads, and if you aren't careful you'll optimize a metric until it stops meaning anything.</p>
+          <p class="standfirst">Building a model is mostly engineering. Knowing whether it actually works (for <em>your</em> task, in <em>your</em> environment) is the genuinely hard part. Benchmarks lie, perplexity misleads, and if you aren't careful you'll optimize a metric until it stops meaning anything.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 18 min</span>
             <span><b>Prereqs</b> · Plate 06</span>
@@ -52,7 +64,7 @@
         <h2 id="why-hard">Why evaluation is the hard part</h2>
         <p>
           In most software you know when something is broken. The function returns the wrong value; the test fails red.
-          With language models, the output is text — and text admits infinite variation. "Paris" and "Paris, France" are
+          With language models, the output is text, and text admits infinite variation. "Paris" and "Paris, France" are
           both correct answers to "What is the capital of France?" but one contains more words. "Write a helpful summary"
           produces a space of valid outputs so large that no enumeration could cover it. You can't write a unit test for fluency.
         </p>
@@ -60,21 +72,21 @@
           The field's answer has been to proxy: measure something correlated with quality that <em>is</em> computable.
           <span class="gloss" data-term="perplexity">Perplexity</span> on held-out text. Multiple-choice accuracy on a
           knowledge benchmark. Pass rate on a coding test suite. Each proxy captures something real, and each has failure
-          modes that let bad models game it — sometimes accidentally, sometimes by design. Understanding the proxy's
+          modes that let bad models game it: sometimes accidentally, sometimes by design. Understanding the proxy's
           limits is the whole skill.
         </p>
         <div class="callout callout--swe">
           <div class="callout__tag">From a software-eng POV · evals are your test suite</div>
           <p>Think of an eval suite as CI for a model. Before you ship a fine-tune, a <span class="gloss" data-term="rag">RAG</span>
           update, or a prompt change, you want a regression harness that tells you "this didn't get worse on the
-          things we care about." If you have no eval, you have no confidence — you're merging to main without tests.
+          things we care about." If you have no eval, you have no confidence; you're merging to main without tests.
           The benchmark ecosystem provides off-the-shelf suites; your job is to add the task-specific ones only you can write.</p>
         </div>
 
         <h2 id="benchmarks">Academic benchmarks: MMLU, GSM8K, HumanEval and friends</h2>
         <p>
           A handful of benchmarks became the de-facto lingua franca for comparing models. Understanding what each
-          actually measures — and what it doesn't — saves you from being misled by a leaderboard.
+          actually measures (and what it doesn't) saves you from being misled by a leaderboard.
         </p>
 
         <div class="tablewrap"><table>
@@ -127,7 +139,7 @@
         <p>
           <strong>HumanEval</strong><a class="cite" data-ref="chen2021"></a> introduced <strong>pass@k</strong>: generate
           <em>k</em> candidate completions, run the unit tests on all of them, and declare success if at least one passes.
-          This corrects for stochasticity — a model that occasionally gets the right answer but usually doesn't should score
+          This corrects for stochasticity: a model that occasionally gets the right answer but usually doesn't should score
           lower than one that's reliably correct. It's a clean, objective signal for code tasks.
         </p>
 
@@ -140,7 +152,7 @@
               pass@k = 1 − C(n−c, k) / C(n, k)
             </p>
             <p>where C(a,b) is the binomial coefficient. This is more statistically efficient than sampling exactly k
-            times per problem — you run n ≥ k samples once and compute the estimator analytically. Chen et al.
+            times per problem; you run n ≥ k samples once and compute the estimator analytically. Chen et al.
             used n=200 and report pass@1, pass@10, pass@100.</p>
           </div>
         </details>
@@ -149,9 +161,9 @@
           <div class="callout__tag">Key paper</div>
           <div class="ref-card"><span class="yr">2021</span>
             <div><cite>Measuring Massive Multitask Language Understanding</cite>
-              <span class="auth">Hendrycks, Burns, Basart et al. — UC Berkeley / MIRI</span>
+              <span class="auth">Hendrycks, Burns, Basart et al., UC Berkeley / MIRI</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">The benchmark that replaced narrow domain tests with a broad
-              57-subject sweep, becoming the standard "how knowledgeable is this model?" number — and, eventually,
+              57-subject sweep, becoming the standard "how knowledgeable is this model?" number, and, eventually,
               an object lesson in Goodhart's Law. <a href="../references.html#ref-25">See reference [25] →</a></p>
             </div>
           </div>
@@ -160,7 +172,7 @@
         <h2 id="perplexity">Perplexity and its limits</h2>
         <p>
           Before there were benchmarks, there was <span class="gloss" data-term="perplexity">perplexity</span>.
-          It's defined as the exponentiated average negative log-likelihood the model assigns to held-out text — essentially,
+          It's defined as the exponentiated average negative log-likelihood the model assigns to held-out text: essentially,
           "how surprised was the model by the test corpus?" Lower is better: a model that assigns high probability to what
           actually happened is less perplexed.
         </p>
@@ -175,13 +187,13 @@
         </p>
         <ul>
           <li>Refuse every question it dislikes (aligned to unhelpfulness).</li>
-          <li>Hallucinate confidently — low <span class="gloss" data-term="hallucination">hallucination</span> is not what perplexity measures.</li>
-          <li>Follow instructions poorly — it's great at completing sentences, terrible at completing tasks.</li>
+          <li>Hallucinate confidently; low <span class="gloss" data-term="hallucination">hallucination</span> is not what perplexity measures.</li>
+          <li>Follow instructions poorly: it's great at completing sentences, terrible at completing tasks.</li>
           <li>Score worse on code perplexity while being better at coding (distribution mismatch).</li>
         </ul>
         <div class="callout callout--analogy">
           <div class="callout__tag">Analogy · compression ratio vs. correctness</div>
-          <p>Perplexity measures how well the model compresses text — like a zip ratio. A model that compresses English
+          <p>Perplexity measures how well the model compresses text, like a zip ratio. A model that compresses English
           prose efficiently does so because it learned the statistics of English prose. But a good compression ratio on
           the wrong corpus (say, dense legal text) tells you nothing about whether the model will be useful to your
           end users. Perplexity is a proxy for fluency, not for usefulness.</p>
@@ -196,7 +208,7 @@
         </p>
         <p>
           MT-Bench asked GPT-4 to score multi-turn conversations across eight categories (coding, math, writing, roleplay…).
-          The resulting scores correlated well with human preferences — suggesting that a strong judge model captures much
+          The resulting scores correlated well with human preferences, suggesting that a strong judge model captures much
           of what humans care about without the cost and slowness of human annotation. This is now standard practice for
           evaluating chat and instruction-following quality.
         </p>
@@ -208,8 +220,8 @@
         </p>
         <div class="callout callout--gotcha">
           <div class="callout__tag">Gotcha · judge bias and self-preference</div>
-          <p>LLM judges have systematic biases: they prefer longer outputs, more structured responses, and — in
-          controlled studies — their own outputs. "GPT-4 rates GPT-4 highly" is a real phenomenon. To mitigate this:
+          <p>LLM judges have systematic biases: they prefer longer outputs, more structured responses, and (in
+          controlled studies) their own outputs. "GPT-4 rates GPT-4 highly" is a real phenomenon. To mitigate this:
           swap the order of responses (position bias is real), use multiple judge models, and calibrate against human
           labels on a random subset.</p>
         </div>
@@ -218,11 +230,11 @@
         <p>
           Here's the quiet problem eating the whole field: once a benchmark is published and its questions are on the
           internet, future training runs will ingest them. A model that has seen "the answer to question 47 of MMLU
-          Jurisprudence is C" during pretraining didn't <em>learn</em> law — it memorized an exam.
+          Jurisprudence is C" during pretraining didn't <em>learn</em> law. It memorized an exam.
         </p>
         <p>
           This is called <strong>benchmark contamination</strong> or <strong>data leakage</strong>, and the community
-          has coined the term <em>benchmaxxing</em> for the practice — intentional or not — of training on or near
+          has coined the term <em>benchmaxxing</em> for the practice (intentional or not) of training on or near
           benchmark data to inflate scores. Scores plateau, papers report state-of-the-art, and nothing improves in
           practice. It's teaching to the test at industrial scale.
         </p>
@@ -235,15 +247,15 @@
           over public leaderboard positions for anything that matters.</p>
         </div>
         <p>
-          The practical response is to use benchmarks as rough filters — enough to tell a 60% model from an 85% model
-          — but to invest seriously in <strong>private, held-out evals</strong> that were never published. If the
+          The practical response is to use benchmarks as rough filters (enough to tell a 60% model from an 85% model)
+          but to invest seriously in <strong>private, held-out evals</strong> that were never published. If the
           questions never hit the internet, they can't leak into the training corpus. This is why leading labs maintain
           eval sets that are never released publicly.
         </p>
         <p>
           <span class="gloss" data-term="alignment">Alignment</span> evaluations suffer the same problem: if the
           alignment dataset leaks, the model learns to say the aligned-sounding answer rather than actually being aligned.
-          Chain-of-thought prompting<a class="cite" data-ref="wei2022"></a> benchmarks are particularly susceptible —
+          Chain-of-thought prompting<a class="cite" data-ref="wei2022"></a> benchmarks are particularly susceptible:
           a few-shot example of the reasoning style will often appear verbatim in training corpora.
         </p>
 
@@ -259,7 +271,7 @@
         <ul>
           <li><strong>Golden dataset:</strong> a hand-curated set of (input, expected-output) pairs that cover your real traffic. 50–200 examples beats 10,000 synthetic ones.</li>
           <li><strong>Exact-match and F1</strong> where the answer space is small (classification, extraction, named entities).</li>
-          <li><strong>Pass@k or execution-based</strong> for code — run the generated code; don't read it.</li>
+          <li><strong>Pass@k or execution-based</strong> for code: run the generated code; don't read it.</li>
           <li><strong>LLM-as-judge</strong> for open-ended tasks: write a rubric, test it on cases where you know the answer, then automate it.</li>
           <li><strong>Regression suite:</strong> run the full eval before and after any model change. Flag any metric that dropped by more than 2 percentage points.</li>
         </ul>
@@ -270,14 +282,14 @@
           applies to LLM evaluation with brutal clarity. Once a benchmark is the thing being optimized, the benchmark
           stops measuring what it was supposed to measure. The only defense is to keep rotating your metrics and to
           maintain held-out, never-public test sets. Think of it as the eval equivalent of not letting developers
-          write their own tests — and then grade their own work.</p>
+          write their own tests, and then grade their own work.</p>
         </div>
 
         <p>
           The EleutherAI <strong>lm-evaluation-harness</strong> is the open-source standard for running academic
           benchmarks in a reproducible way. It implements MMLU, HellaSwag, GSM8K, HumanEval, and dozens of others,
           and it's the harness used by most open-model leaderboards (Open LLM Leaderboard on Hugging Face). Worth
-          knowing even if you mostly write custom evals — it's the reference implementation.
+          knowing even if you mostly write custom evals; it's the reference implementation.
         </p>
 
         <!-- Code: (a) custom eval with pass@k / exact-match -->
@@ -408,14 +420,14 @@ print(scores)</code></pre></div>
 
         <h2 id="recap">Recap</h2>
         <ul>
-          <li><strong>Evaluation is the hard part</strong> — text outputs don't have a natural ground truth, so the field uses proxies, each with failure modes.</li>
+          <li><strong>Evaluation is the hard part</strong>: text outputs don't have a natural ground truth, so the field uses proxies, each with failure modes.</li>
           <li><strong>MMLU</strong> tests broad knowledge (57 subjects, multiple choice); <strong>GSM8K</strong> tests multi-step math; <strong>HumanEval</strong> tests code via unit-test pass rate (pass@k); <strong>MT-Bench &amp; Chatbot Arena</strong> measure chat quality via preference.</li>
-          <li><strong>Perplexity</strong> is an excellent signal for pretraining progress but a poor judge of downstream usefulness — a fluent model can still be wrong, unhelpful, or hallucinating.</li>
+          <li><strong>Perplexity</strong> is an excellent signal for pretraining progress but a poor judge of downstream usefulness: a fluent model can still be wrong, unhelpful, or hallucinating.</li>
           <li><strong>LLM-as-a-judge</strong> (use a strong model to score outputs against a rubric) correlates well with human preference and scales cheaply; watch for position bias and self-preference.</li>
           <li><strong>Contamination</strong> (benchmark questions appearing in training data) inflates public scores. Treat leaderboard numbers as rough filters; run held-out private evals for anything that matters.</li>
           <li><strong>Build task-specific evals</strong>: a golden dataset, exact-match or execution-based scoring where possible, LLM-judge for open-ended, and a regression harness you run on every model change. Goodhart's Law is always watching.</li>
         </ul>
-        <p>With solid evals in hand, you're ready to tackle retrieval-augmented generation — giving the model access to fresh knowledge at inference time. On to Plate 17.</p>
+        <p>With solid evals in hand, you're ready to tackle retrieval-augmented generation, giving the model access to fresh knowledge at inference time. On to Plate 17.</p>
       </article>
 
       <nav class="pager" id="pager"></nav>

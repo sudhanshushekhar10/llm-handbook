@@ -4,6 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Plate 02 · A Short History of Language Models — The Field Guide to LLMs</title>
+  <meta property="og:site_name" content="The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="A Short History of Language Models — The Engineer&#x27;s Field Guide to LLMs">
+  <meta property="og:description" content="n-grams → word2vec → RNNs → attention → the Transformer → the GPT era.">
+  <meta property="og:url" content="https://sudhanshushekhar10.github.io/llm-handbook/chapters/02-history.html">
+  <meta property="og:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="A Short History of Language Models — The Engineer&#x27;s Field Guide to LLMs">
+  <meta name="twitter:description" content="n-grams → word2vec → RNNs → attention → the Transformer → the GPT era.">
+  <meta name="twitter:image" content="https://sudhanshushekhar10.github.io/llm-handbook/assets/og/og-default.png">
   <meta name="description" content="From n-gram counting to ChatGPT: the ideas, failures, and breakthroughs that built modern language models — told as an engineer's narrative.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,7 +53,7 @@
         <div class="masthead">
           <div class="plate-no"><span class="dot"></span> Plate 02 · Part I — Foundations</div>
           <h1>A Short History of Language Models</h1>
-          <p class="standfirst">Every quirk in modern LLMs — the context window, the token, the attention mechanism — was an answer to a specific failure. Knowing what broke and why is the fastest way to understand why things work the way they do today.</p>
+          <p class="standfirst">Every quirk in modern LLMs (the context window, the token, the attention mechanism) was an answer to a specific failure. Knowing what broke and why is the fastest way to understand why things work the way they do today.</p>
           <div class="masthead__meta">
             <span><b>Reading time</b> · 15 min</span>
             <span><b>Prereqs</b> · Plate 01</span>
@@ -55,7 +67,7 @@
           Shannon asked a deceptively simple question: <em>how much information is in a piece of text?</em> To answer it,
           he modelled language as a process that produces one symbol at a time, where each symbol's probability depends
           on what came before. He called the resulting measure <span class="gloss" data-term="perplexity">entropy</span>,
-          and the word "perplexity" — how surprised the model is by real text — still measures language model quality today.
+          and the word "perplexity" (how surprised the model is by real text) still measures language model quality today.
         </p>
         <p>
           The practical tool that followed was the <strong>n-gram model</strong>. Count how often each sequence of <em>n</em>
@@ -65,12 +77,12 @@
         </p>
 
         <div class="callout callout--fail">
-          <div class="callout__tag">What didn't work — and why</div>
+          <div class="callout__tag">What didn't work, and why</div>
           <p>N-gram models hit a wall called the <strong>curse of dimensionality</strong>. To look up a 5-gram you need
-          that exact 5-word sequence in your training data. Most 5-grams are <em>never</em> seen in training — the space
+          that exact 5-word sequence in your training data. Most 5-grams are <em>never</em> seen in training; the space
           of possible sequences is astronomical. You can smooth (add a small count to everything you haven't seen), but
-          smoothing is a patch, not a solution. Long-range dependencies — "the bank I visited last Tuesday, which was
-          beside the river, was closed" — are beyond any practical n-gram model. The method captured local word
+          smoothing is a patch, not a solution. Long-range dependencies ("the bank I visited last Tuesday, which was
+          beside the river, was closed") are beyond any practical n-gram model. The method captured local word
           correlation but not meaning.</p>
         </div>
 
@@ -84,42 +96,42 @@
         <p>
           The break came in 2003. Yoshua Bengio and colleagues<a class="cite" data-ref="bengio2003"></a> proposed the
           first neural language model: instead of looking up word sequences in a table, learn a <em>continuous vector</em>
-          for each word — a point in a high-dimensional space — and train a small neural network to predict the next word
+          for each word (a point in a high-dimensional space) and train a small neural network to predict the next word
           using those vectors.
         </p>
         <p>
           This idea, the <span class="gloss" data-term="embedding">word embedding</span>, solved the sparsity problem by
           side-stepping it. Two words that appear in similar contexts (say, "cat" and "dog") learn similar vectors. You
-          don't need the exact phrase "my dog ate" in training to predict what comes after "my cat ate" — the model
+          don't need the exact phrase "my dog ate" in training to predict what comes after "my cat ate": the model
           generalizes because the vectors are geometrically close.
         </p>
         <p>
           The idea was right but the training was slow. A decade later, Mikolov et al. found a way to train word vectors
-          on billions of words in hours — <strong>word2vec</strong><a class="cite" data-ref="mikolov2013"></a>. The result
+          on billions of words in hours: <strong>word2vec</strong><a class="cite" data-ref="mikolov2013"></a>. The result
           was stunning: the vectors arranged themselves so that <em>arithmetic</em> encoded relationships.
           "king" − "man" + "woman" ≈ "queen". Paris : France :: Berlin : Germany. Meaning had become geometry.
           The ML world's collective jaw dropped.
         </p>
 
         <div class="callout callout--win">
-          <div class="callout__tag">What won — and why</div>
+          <div class="callout__tag">What won, and why</div>
           <p><strong>Learned embeddings</strong> replaced count-based vectors because they generalized. N-gram models
           were brittle lookup tables; embedding models built a geometry where unseen combinations could be reasoned about
-          by proximity. This embedding paradigm — representing discrete symbols as dense vectors that encode semantic
-          relationships — is now so fundamental that it's easy to forget it was once a controversial bet.</p>
+          by proximity. This embedding paradigm (representing discrete symbols as dense vectors that encode semantic
+          relationships) is now so fundamental that it's easy to forget it was once a controversial bet.</p>
         </div>
 
         <h2 id="rnns">Memory in a loop: RNNs, LSTMs, seq2seq</h2>
         <p>
           Word2vec gave you word-level vectors, but a language model needs to process sequences. Enter the
           <strong>recurrent neural network</strong> (RNN): a <code>for</code> loop over tokens where each step updates
-          a hidden state vector. Think of it as a register machine — one accumulator, updated at every step, carrying
+          a hidden state vector. Think of it as a register machine: one accumulator, updated at every step, carrying
           forward the "memory" of everything seen.
         </p>
         <p>
           RNNs worked, but they were plagued by the <strong>vanishing gradient problem</strong>. To train via
           backpropagation<a class="cite" data-ref="williams1992"></a>, you multiply gradients through every step of the
-          sequence. Multiply a number slightly less than 1 by itself a hundred times and it vanishes to zero — the
+          sequence. Multiply a number slightly less than 1 by itself a hundred times and it vanishes to zero; the
           signal about the beginning of a long sentence never reaches the loss. Hochreiter and Schmidhuber's
           <strong>LSTM</strong> (1997) fixed this with a gated architecture that learned <em>what to remember and what
           to forget</em>, but the fundamental sequential bottleneck remained.
@@ -127,22 +139,22 @@
         <p>
           In 2014, Sutskever, Vinyals, and Le built <strong>seq2seq</strong><a class="cite" data-ref="sutskever2014"></a>:
           one LSTM encoded the source sentence into a single fixed vector; another decoded it into the target language.
-          Machine translation improved dramatically. But that single vector — the bottleneck — was squeezed too hard on
+          Machine translation improved dramatically. But that single vector (the bottleneck) was squeezed too hard on
           long sentences. The encoder had to cram an entire sentence's meaning into a fixed-size bag.
         </p>
         <p>
           Bahdanau et al. cracked the bottleneck in 2014 with <span class="gloss" data-term="attention">attention</span><a class="cite" data-ref="bahdanau2014"></a>:
           instead of one fixed vector, the decoder could "look back" at every encoder state and decide which was most
-          relevant at each decoding step. It was still bolted onto an RNN, but the idea — learn which parts of the input
-          to pay attention to — was the seed of everything that followed.
+          relevant at each decoding step. It was still bolted onto an RNN, but the idea (learn which parts of the input
+          to pay attention to) was the seed of everything that followed.
         </p>
 
         <div class="callout callout--fail">
-          <div class="callout__tag">What didn't work — the sequential bottleneck</div>
+          <div class="callout__tag">What didn't work: the sequential bottleneck</div>
           <p>The RNN/LSTM's fatal flaw was not memory capacity but <strong>parallelism</strong>. To compute step 500
           you must first compute steps 1 through 499. Modern GPUs thrive on parallel matrix multiplies; serial
           dependencies starve them. You can't use your 10,000 GPU cores if step <em>n</em> must wait for step
-          <em>n−1</em>. This is why the Transformer — which computes all positions simultaneously — was so
+          <em>n−1</em>. This is why the Transformer (which computes all positions simultaneously) was so
           transformative: it unlocked the full parallelism of modern hardware.</p>
         </div>
 
@@ -159,7 +171,7 @@
           <div class="ref-card">
             <span class="yr">2017</span>
             <div><cite>Attention Is All You Need</cite>
-              <span class="auth">Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin — NeurIPS 2017</span>
+              <span class="auth">Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin, NeurIPS 2017</span>
               <p style="margin:.5rem 0 0;font-size:.92rem">Introduced the <span class="gloss" data-term="transformer">Transformer</span>
               architecture: multi-head self-attention, positional encoding, and the encoder–decoder design. Every major
               LLM today is a direct descendant.
@@ -171,7 +183,7 @@
         <p>
           The Transformer's <span class="gloss" data-term="self-attention">self-attention</span> mechanism lets each token
           look directly at every other token in the sequence, weighted by learned relevance scores. It's a soft,
-          differentiable lookup table — a fuzzy hashmap where every key matches to some degree (Plate 05 digs into
+          differentiable lookup table: a fuzzy hashmap where every key matches to some degree (Plate 05 digs into
           exactly how). Crucially, this is entirely parallel: a 512-token sequence runs in the same number of GPU steps
           as a 5-token sequence (modulo memory). Training time dropped from days to hours for equivalent quality.
         </p>
@@ -183,7 +195,7 @@
         </p>
         <p>
           Google's <strong>BERT</strong><a class="cite" data-ref="devlin2018"></a> kept the encoder. It was trained to
-          predict randomly masked words — "the [MASK] sat on the mat" — which means it sees both the left and right
+          predict randomly masked words ("the [MASK] sat on the mat"), which means it sees both the left and right
           context of every word simultaneously. BERT-style models became the gold standard for text <em>understanding</em>:
           classification, named-entity recognition, question answering. Bidirectionality is a superpower when you have
           the whole input and need to extract meaning from it.
@@ -192,13 +204,13 @@
           OpenAI's <strong>GPT</strong><a class="cite" data-ref="radford2018"></a> kept the decoder. It was trained on
           a simpler objective: predict the next token, left-to-right, without looking at the future (a causal mask).
           This is called <span class="gloss" data-term="autoregressive">autoregressive</span> language modelling. GPT was
-          smaller and less impressive than BERT on benchmarks — but it could <em>generate</em>.
+          smaller and less impressive than BERT on benchmarks, but it could <em>generate</em>.
         </p>
 
         <div class="callout callout--win">
-          <div class="callout__tag">What won — decoder-only</div>
+          <div class="callout__tag">What won: decoder-only</div>
           <p>In hindsight, the generation objective was the right bet. A model trained to predict the next token on raw
-          text — no labels, no annotation, just the internet — turns out to generalize remarkably: it can classify, translate,
+          text (no labels, no annotation, just the internet) turns out to generalize remarkably: it can classify, translate,
           and summarize when simply asked. One objective, one architecture, all tasks. BERT-style encoders remain the
           right tool for embeddings and retrieval (see Plate 17), but the chatbots you interact with daily are all
           decoder-only. The simplicity of the autoregressive objective also meant it was trivially scalable: more data,
@@ -207,7 +219,7 @@
 
         <h2 id="gpt3-scale">Scale and the surprise of GPT-3</h2>
         <p>
-          GPT-2 (2019)<a class="cite" data-ref="radford2019"></a> was the "too dangerous to release" model — 1.5 billion
+          GPT-2 (2019)<a class="cite" data-ref="radford2019"></a> was the "too dangerous to release" model: 1.5 billion
           parameters, generating convincingly human text about whatever topic it was primed with. OpenAI released it in
           stages, nervously. In retrospect, GPT-2 was a toy.
         </p>
@@ -216,8 +228,8 @@
           billion tokens. The quantitative jump was expected. The qualitative surprise was not: <span class="gloss" data-term="emergence">emergent
           abilities</span> appeared that no one had specifically trained for. Given a few examples in the prompt, the model
           could translate into languages it wasn't explicitly fine-tuned on, write code in a style it was shown, perform
-          arithmetic it hadn't seen. This ability — <span class="gloss" data-term="zero-shot">zero-shot</span> and
-          few-shot generalization from context alone — was not in the spec. It fell out of scale.
+          arithmetic it hadn't seen. This ability (<span class="gloss" data-term="zero-shot">zero-shot</span> and
+          few-shot generalization from context alone) was not in the spec. It fell out of scale.
         </p>
         <p>
           The <span class="gloss" data-term="scaling-laws">scaling laws</span> paper by Kaplan et al.<a class="cite" data-ref="kaplan2020"></a>
@@ -228,16 +240,16 @@
 
         <h2 id="chatgpt-inflection">The ChatGPT inflection</h2>
         <p>
-          GPT-3 was powerful but difficult to use. Raw completion models are not assistants — they'll continue your prompt
+          GPT-3 was powerful but difficult to use. Raw completion models are not assistants: they'll continue your prompt
           in a direction you didn't intend, ignore your actual question, or produce harmful text. The fix, developed through
           2021–2022, was <span class="gloss" data-term="rlhf">RLHF</span>: Reinforcement Learning from Human Feedback<a class="cite" data-ref="ouyang2022"></a>.
         </p>
         <p>
           The recipe had three steps. First, collect human-written example answers and fine-tune GPT-3 on them
           (<span class="gloss" data-term="instruction-tuning">instruction tuning</span>, or SFT). Second, train a
-          <em>reward model</em> — a separate neural network that scores responses by human preference. Third, use
+          <em>reward model</em>: a separate neural network that scores responses by human preference. Third, use
           reinforcement learning to update the language model so it produces responses the reward model rates highly.
-          The resulting model — InstructGPT — followed instructions, refused harmful requests, and produced dramatically
+          The resulting model (InstructGPT) followed instructions, refused harmful requests, and produced dramatically
           more useful outputs than raw GPT-3 with far fewer parameters.
         </p>
         <p>
@@ -250,7 +262,7 @@
           Meta's <strong>LLaMA</strong><a class="cite" data-ref="touvron2023"></a> (February 2023) changed the game again.
           A 65-billion-parameter model trained on publicly available data, released with weights for researchers. Within
           days it had leaked; within weeks the community had fine-tuned it for chat, instruction-following, code, and
-          dozens of other tasks — without RLHF, using only a few thousand labelled examples and a technique called
+          dozens of other tasks, without RLHF, using only a few thousand labelled examples and a technique called
           <span class="gloss" data-term="peft">parameter-efficient fine-tuning</span> (Plate 10). Alpaca, Vicuna, WizardLM,
           and hundreds of variants emerged in the months that followed.
         </p>
@@ -306,7 +318,7 @@
             <!-- 2017 -->
             <circle cx="100" cy="202" r="7" class="tl-dot" style="fill:var(--accent-deep)"/>
             <text x="82" y="206" text-anchor="end" class="tl-yr" style="font-weight:600">2017</text>
-            <text x="114" y="199" class="tl-lbl" style="font-weight:600">Transformer — "Attention Is All You Need"</text>
+            <text x="114" y="199" class="tl-lbl" style="font-weight:600">Transformer: "Attention Is All You Need"</text>
             <text x="114" y="212" class="tl-sub">Recurrence discarded; full parallelism unlocked</text>
 
             <!-- 2018 -->
@@ -333,15 +345,15 @@
 
         <h2 id="recap">Recap</h2>
         <ul>
-          <li><strong>N-grams</strong> were the first probabilistic language models — giant hashmaps of word co-occurrence — but they couldn't generalize to unseen sequences or capture long-range meaning.</li>
-          <li><strong>Neural LMs and embeddings</strong> (Bengio 2003, word2vec 2013) replaced sparse tables with dense vectors where geometry encodes meaning — solving sparsity by generalization.</li>
+          <li><strong>N-grams</strong> were the first probabilistic language models (giant hashmaps of word co-occurrence), but they couldn't generalize to unseen sequences or capture long-range meaning.</li>
+          <li><strong>Neural LMs and embeddings</strong> (Bengio 2003, word2vec 2013) replaced sparse tables with dense vectors where geometry encodes meaning, solving sparsity by generalization.</li>
           <li><strong>RNNs and LSTMs</strong> introduced sequential memory but hit a wall: the serial step dependency prevents GPU parallelism, and long-range gradients vanish.</li>
-          <li>Bahdanau's <strong>attention</strong> (2014) let the decoder look back at all encoder states — a bolt-on fix that turned out to contain the real insight.</li>
+          <li>Bahdanau's <strong>attention</strong> (2014) let the decoder look back at all encoder states, a bolt-on fix that turned out to contain the real insight.</li>
           <li>The <strong>Transformer</strong> (2017) threw away recurrence entirely: all positions attend to all positions in parallel. Training time collapsed; model quality soared.</li>
           <li><strong>BERT vs GPT</strong> split the architecture: bidirectional encoders for understanding, causal decoders for generation. Decoder-only won for chat.</li>
-          <li><strong>Scale surprised everyone</strong>: emergent abilities (zero-shot task generalization) weren't programmed — they fell out of training on more data with more compute.</li>
+          <li><strong>Scale surprised everyone</strong>: emergent abilities (zero-shot task generalization) weren't programmed; they fell out of training on more data with more compute.</li>
           <li><strong>RLHF</strong> turned a powerful but unruly completion engine into a usable assistant. ChatGPT made this visible to the world.</li>
-          <li>Open-weights models (LLaMA, 2023) proved pretraining is the expensive step; adaptation is cheap — reshaping who can build with LLMs.</li>
+          <li>Open-weights models (LLaMA, 2023) proved pretraining is the expensive step; adaptation is cheap, reshaping who can build with LLMs.</li>
         </ul>
         <p>Next, Plate 03 maps the software stack you'll actually use: PyTorch, Hugging Face, CUDA, and the environment
           setup that makes it all run without tears.</p>
