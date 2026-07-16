@@ -201,7 +201,7 @@ li::marker { color: var(--accent); }
   backdrop-filter: saturate(140%) blur(12px);
   border-bottom: 1px solid var(--line);
 }
-.topbar__brand { display: flex; align-items: center; gap: .65rem; text-decoration: none; color: var(--text); margin-right: auto; }
+.topbar__brand { display: flex; align-items: center; gap: .65rem; text-decoration: none; color: var(--text); margin-right: auto; min-width: 0; }
 .topbar__mark {
   width: 30px; height: 30px; border-radius: 7px; flex: none;
   background: radial-gradient(120% 120% at 30% 20%, var(--accent) 0%, var(--accent-deep) 100%);
@@ -209,9 +209,11 @@ li::marker { color: var(--accent); }
   font-family: var(--font-mono); font-weight: 700; font-size: .9rem;
   box-shadow: var(--shadow-sm);
 }
-.topbar__title { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; letter-spacing: -.01em; }
-.topbar__title small { display:block; font-family: var(--font-mono); font-size:.6rem; letter-spacing:.18em; text-transform:uppercase; color: var(--text-3); font-weight:500; }
-.topbar__actions { display: flex; align-items: center; gap: .4rem; }
+.topbar__title { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; letter-spacing: -.01em;
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar__title small { display:block; font-family: var(--font-mono); font-size:.6rem; letter-spacing:.18em; text-transform:uppercase; color: var(--text-3); font-weight:500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar__actions { display: flex; align-items: center; gap: .4rem; flex: none; }
 
 .iconbtn {
   width: 38px; height: 38px; display: grid; place-items: center;
@@ -716,6 +718,16 @@ td code { white-space: nowrap; }
   .gloss-entry { grid-template-columns: 1fr; gap: .3rem; }
   .pager { grid-template-columns: 1fr; }
   .searchbtn span { display: none; }
+}
+
+@media (max-width: 480px) {
+  /* declutter the masthead on phones so the brand never wraps: drop the tagline + the ⌘K hint,
+     and tighten spacing so the full title fits without truncating */
+  .topbar__title small { display: none; }
+  .searchbtn kbd { display: none; }
+  .topbar { gap: .5rem; padding-left: .7rem; padding-right: .7rem; }
+  .topbar__brand { gap: .5rem; }
+  .topbar__actions { gap: .2rem; }
 }
 
 @media print {
